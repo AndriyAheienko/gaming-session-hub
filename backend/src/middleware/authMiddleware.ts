@@ -2,7 +2,7 @@ import type { Response, NextFunction } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import jwt from 'jsonwebtoken';
 
-export const protect = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const protect = (req: AuthRequest, res: Response, next: NextFunction): void => {
     let token;
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
@@ -14,6 +14,7 @@ export const protect = (req: AuthRequest, res: Response, next: NextFunction) => 
 
             next();
         } catch (error) {
+            console.error('Token invalid, error: ', error);
             res.status(401).json({ message: 'Token invalid' });
             return;
         }
