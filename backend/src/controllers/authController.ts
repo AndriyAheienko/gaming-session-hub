@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
 import { errorHandler } from '../utils/errorHandler.js';
-import query from '../config/bd.js';
+import { query } from '../config/bd.js';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
     const { name, email, password } = req.body;

@@ -1,20 +1,24 @@
 import type { Request, Response } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
-import query from '../config/bd.js';
+import pool, { query } from '../config/bd.js';
 import { errorHandler } from '../utils/errorHandler.js';
 
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const { title, gameId, maxPlayers, startsAt, language, micRequired, description } = req.body;
     const ownerId = req.user?.userId;
 
+    const client = await pool.connect();
+
     try {
+        await client.query('BEGIN');
+
         const sql = `
             INSERT INTO sessions (title, game_id, max_players, starts_at, language, mic_required, description, owner_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING *
+            RETURNING id, title, game_id, max_players, starts_at, language, mic_required, description, owner_id
         `;
 
-        const session = await query(sql, [
+        const session = await client.query(sql, [
             title,
             gameId,
             maxPlayers,
@@ -25,11 +29,28 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
             ownerId,
         ]);
 
+        const ownerRole = 'owner';
+
+        const roleSql = `
+            INSERT INTO session_members (session_id, user_id, role)
+            VALUES ($1, $2, $3)
+            RETURNING id, session_id, user_id, role, joined_at
+        `;
+
+        const owner = await client.query(roleSql, [session.rows[0].id, ownerId, ownerRole]);
+
+        await client.query('COMMIT');
+
         res.status(201).json({
             session: session.rows[0],
+            ownerUser: owner.rows[0],
         });
     } catch (error) {
+        await client.query('ROLLBACK');
+
         errorHandler(res, 'Error creating game session', error);
+    } finally {
+        client.release();
     }
 };
 
@@ -83,7 +104,6 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
     }
 };
 
-/* ПЕРЕРОБИТИ */
 export const joinSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const sessionId = Number(req.params.id);
     const memberId = req.user?.userId;
@@ -98,19 +118,29 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        if (session.rows[0].max_players === 5) {
+        const currentPlayersSql = `
+            SELECT COUNT(sm.user_id) AS current_players
+            FROM session_members sm
+            WHERE sm.session_id = $1
+        `;
+
+        const currentPlayers = await query(currentPlayersSql, [sessionId]);
+
+        const currentPlayersCount = Number(currentPlayers.rows[0].current_players);
+        const maxPlayers = session.rows[0].max_players;
+
+        if (currentPlayersCount >= maxPlayers) {
             res.status(409).json({ message: 'Sorry, but the session is full of players' });
             return;
         }
 
         const memberExist = await query(
             `
-                SELECT s.id FROM sessions
-                INNER JOIN session_members sm
-                ON s.id = sm.session_id
-                WHERE s.id = $1
+                SELECT id
+                FROM session_members
+                WHERE session_id = $1 AND user_id = $2
             `,
-            [memberId],
+            [sessionId, memberId],
         );
 
         if ((memberExist.rowCount ?? 0) > 0) {
@@ -119,7 +149,7 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         }
 
         const sql = `
-            INSERT INTO session_members (session_id , user_id, role)
+            INSERT INTO session_members (session_id , user_id)
             VALUES ($1, $2)
             RETURNING session_id, user_id, role, joined_at 
         `;
@@ -131,5 +161,63 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         });
     } catch (error) {
         errorHandler(res, 'Failed to join the session', error);
+    }
+};
+
+export const leaveSession = async (req: AuthRequest, res: Response): Promise<void> => {
+    const sessionId = Number(req.params.id);
+    const userId = req.user?.userId;
+
+    try {
+        const session = await query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
+
+        if (session.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found' });
+            return;
+        }
+
+        const sqlExist = `
+            SELECT role
+            FROM session_members 
+            WHERE session_id = $1 AND user_id = $2
+        `;
+
+        const userExist = await query(sqlExist, [sessionId, userId]);
+
+        if (userExist.rowCount === 0) {
+            res.status(409).json({ message: 'The user is not a participant in the session' });
+            return;
+        }
+
+        if (userExist.rows[0].role === 'member') {
+            const deleteMember = await query(
+                'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2 RETURNING id',
+                [sessionId, userId],
+            );
+
+            if (deleteMember.rowCount === 0) {
+                res.status(404).json({ message: 'User not found in this session' });
+                return;
+            }
+
+            res.status(200).json({
+                message: 'User leave this session successfully',
+            });
+
+            return;
+        }
+
+        const deleteSession = await query('DELETE FROM sessions WHERE id = $1 RETURNING id', [
+            sessionId,
+        ]);
+
+        if (deleteSession.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found for deletion' });
+            return;
+        }
+
+        res.status(200).json({ message: 'User leave and deletion session successfully' });
+    } catch (error) {
+        errorHandler(res, 'Failed to leave the session', error);
     }
 };

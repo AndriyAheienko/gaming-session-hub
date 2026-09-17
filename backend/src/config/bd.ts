@@ -7,8 +7,8 @@ const pool = new Pool({
     },
 });
 
-const query = (sql: string, params?: any[]) => {
+export const query = (sql: string, params?: any[]) => {
     return pool.query(sql, params);
 };
 
-export default query;
+export default pool;

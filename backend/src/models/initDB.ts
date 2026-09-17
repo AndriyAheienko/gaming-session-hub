@@ -1,4 +1,4 @@
-import query from '../config/bd.js';
+import { query } from '../config/bd.js';
 
 export const initDB = async () => {
     const createTables = `
