@@ -8,6 +8,8 @@ export const initDB = async () => {
             name VARCHAR(100) NOT NULL,
             email VARCHAR(200) UNIQUE NOT NULL,
             password_hash VARCHAR(200) NOT NULL,
+            rating_sum NUMERIC(5, 1) NOT NULL DEFAULT 0,
+            rating_count INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
@@ -55,6 +57,38 @@ export const initDB = async () => {
             sender_id INTEGER NOT NULL REFERENCES users(id),
             text TEXT NOT NULL,
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- friendships
+        CREATE TABLE IF NOT EXISTS friendships (
+            id SERIAL PRIMARY KEY,
+            sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- session_invitations
+        CREATE TABLE IF NOT EXISTS session_invitations (
+            id SERIAL PRIMARY KEY,
+            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- ratings
+        CREATE TABLE IF NOT EXISTS ratings (
+            id SERIAL PRIMARY KEY,
+            rater_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            target_id INTEGER NOT NULL REFERENCES users(id),
+            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            rating INTEGER NOT NULL,
+            CHECK (rating BETWEEN 1 AND 5),
+            CHECK (rater_id <> target_id),
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (session_id, rater_id, target_id)
         );
     `;
 
