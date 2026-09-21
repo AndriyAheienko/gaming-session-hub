@@ -253,3 +253,124 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
         errorHandler(res, 'Failed to leave the session', error);
     }
 };
+
+export const sendSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+    const senderId = req.user?.userId;
+    const receiver_id = Number(req.params.userId);
+    const sessionId = Number(req.params.sessionId);
+
+    try {
+        const sqlSessionExist = `
+            SELECT owner_id
+            FROM sessions
+            WHERE id = $1 AND owner_id = $2
+        `;
+
+        const ownerSessionExist = await query(sqlSessionExist, [sessionId, senderId]);
+
+        if (ownerSessionExist.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found' });
+            return;
+        }
+
+        if (ownerSessionExist.rows[0].owner_id === receiver_id) {
+            res.status(400).json({ message: 'You cannot send a request to yourself' });
+            return;
+        }
+
+        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiver_id]);
+
+        if (receiverExist.rowCount === 0) {
+            res.status(404).json({ message: 'Receiver not found' });
+            return;
+        }
+
+        const receiverMember = await query(
+            `
+            SELECT id FROM session_members
+            WHERE session_id = $1 AND user_id = $2
+            `,
+            [sessionId, receiver_id],
+        );
+
+        if ((receiverMember.rowCount ?? 0) > 0) {
+            res.status(409).json({ message: 'The invitation recipient is already in the session' });
+            return;
+        }
+
+        const invitationExist = await query(
+            `SELECT status FROM session_invitations WHERE session_id = $1 AND sender_id = $2 AND receiver_id = $3 AND status = 'pending'`,
+            [sessionId, senderId, receiver_id],
+        );
+
+        if ((invitationExist.rowCount ?? 0) > 0) {
+            res.status(409).json({ message: 'You have already sent an invitation to this user' });
+            return;
+        }
+
+        const sql = `
+            INSERT INTO session_invitations (session_id, sender_id, receiver_id)
+            VALUES ($1, $2, $3)
+            RETURNING id, session_id, sender_id, receiver_id, status, created_at
+        `;
+
+        const sessionInvitation = await query(sql, [sessionId, senderId, receiver_id]);
+
+        res.status(201).json({
+            sessionInvitation: sessionInvitation.rows[0],
+        });
+    } catch (error) {
+        errorHandler(res, 'Failed to session invitation', error);
+    }
+};
+
+// Edit
+export const acceptSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
+    const invitationId = Number(req.params.invitationId);
+    try {
+        const sql = `
+            UPDATE session_invitations SET status = 'accepted'
+            WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
+            RETURNING id, session_id, sender_id, receiver_id, status, created_at
+        `;
+
+        const acceptedRequest = await query(sql, [userId, invitationId]);
+
+        if (acceptedRequest.rowCount === 0) {
+            res.status(409).json({ message: 'Failed to accept invite request in session' });
+            return;
+        }
+
+        res.status(200).json({
+            acceptedRequest: acceptedRequest.rows[0],
+        });
+    } catch (error) {
+        errorHandler(res, 'Error to accept invite request in session', error);
+    }
+};
+
+export const rejectSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
+    const invitationId = Number(req.params.invitationId);
+    try {
+        const sql = `
+            UPDATE session_invitations SET status = 'rejected'
+            WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
+            RETURNING id, session_id, sender_id, receiver_id, status, created_at
+        `;
+
+        const rejectedRequest = await query(sql, [userId, invitationId]);
+
+        if (rejectedRequest.rowCount === 0) {
+            res.status(409).json({ message: 'Failed to reject invite request in session' });
+            return;
+        }
+
+        res.status(200).json({
+            rejectedRequest: rejectedRequest.rows[0],
+        });
+    } catch (error) {
+        errorHandler(res, 'Error to reject invite request in session', error);
+    }
+};

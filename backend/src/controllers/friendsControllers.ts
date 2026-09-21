@@ -48,30 +48,18 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
     const friendshipId = Number(req.params.friendshipId);
 
     try {
-        const friendshipExist = await query(
-            'SELECT id, sender_id, receiver_id FROM friendships WHERE id = $1',
-            [friendshipId],
-        );
-
-        if (friendshipExist.rowCount === 0) {
-            res.status(404).json({ message: 'Friend request not found' });
-            return;
-        }
-
-        if (userId !== friendshipExist.rows[0].receiver_id) {
-            res.status(403).json({ message: 'Error accepting friend request' });
-            return;
-        }
-
-        const accepted = 'accepted';
-
         const sql = `
-            UPDATE friendships SET status = $1
-            WHERE id = $2 AND receiver_id = $3 AND status = 'pending'
+            UPDATE friendships SET status = 'accepted'
+            WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
             RETURNING id, sender_id, receiver_id, status, created_at 
         `;
 
-        const acceptRequest = await query(sql, [accepted, friendshipId, userId]);
+        const acceptRequest = await query(sql, [friendshipId, userId]);
+
+        if (acceptRequest.rows.length === 0) {
+            res.status(400).json({ message: 'Failed to accept the friend request' });
+            return;
+        }
 
         res.status(200).json({
             acceptRequest: acceptRequest.rows[0],
@@ -86,30 +74,18 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
     const friendshipId = Number(req.params.friendshipId);
 
     try {
-        const friendshipExist = await query(
-            'SELECT id, sender_id, receiver_id FROM friendships WHERE id = $1',
-            [friendshipId],
-        );
-
-        if (friendshipExist.rowCount === 0) {
-            res.status(404).json({ message: 'Friend request not found' });
-            return;
-        }
-
-        if (userId !== friendshipExist.rows[0].receiver_id) {
-            res.status(403).json({ message: 'Error rejecting friend request' });
-            return;
-        }
-
-        const rejected = 'rejected';
-
         const sql = `
-            UPDATE friendships SET status = $1
-            WHERE id = $2 AND receiver_id = $3 AND status = 'pending'
+            UPDATE friendships SET status = 'rejected'
+            WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
             RETURNING id, sender_id, receiver_id, status, created_at  
         `;
 
-        const rejectRequest = await query(sql, [rejected, userId]);
+        const rejectRequest = await query(sql, [friendshipId, userId]);
+
+        if (rejectRequest.rows.length === 0) {
+            res.status(400).json({ message: 'Failed to reject the friend request' });
+            return;
+        }
 
         res.status(200).json({
             rejectRequest: rejectRequest.rows[0],

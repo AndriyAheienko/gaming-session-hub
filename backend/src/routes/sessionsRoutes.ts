@@ -6,6 +6,9 @@ import {
     joinSession,
     getSessionMembers,
     leaveSession,
+    sendSessionInvitation,
+    acceptSessionInvitation,
+    rejectSessionInvitation,
 } from '../controllers/sessionControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -15,6 +18,9 @@ router.post('/', protect, createSession);
 router.get('/', getSessions);
 router.get('/:id', getSessionById);
 router.get('/:id/members', getSessionMembers);
+router.post('/:sessionId/invitations/:userId', protect, sendSessionInvitation);
+router.patch('/invitations/:invitationId/accept', protect, acceptSessionInvitation);
+router.patch('/invitations/:invitationId/reject', protect, rejectSessionInvitation);
 router.post('/:id/join', protect, joinSession);
 router.delete('/:id/leave', protect, leaveSession);
 
