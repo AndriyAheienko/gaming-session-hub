@@ -9,6 +9,7 @@ import {
     sendSessionInvitation,
     acceptSessionInvitation,
     rejectSessionInvitation,
+    getSessionsInvitations,
 } from '../controllers/sessionControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -16,6 +17,7 @@ const router = Router();
 
 router.post('/', protect, createSession);
 router.get('/', getSessions);
+router.get('/invitations', protect, getSessionsInvitations);
 router.get('/:id', getSessionById);
 router.get('/:id/members', getSessionMembers);
 router.post('/:sessionId/invitations/:userId', protect, sendSessionInvitation);

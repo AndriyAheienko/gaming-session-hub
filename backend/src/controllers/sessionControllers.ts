@@ -151,9 +151,9 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         }
 
         const currentPlayersSql = `
-            SELECT COUNT(sm.user_id) AS current_players
-            FROM session_members sm
-            WHERE sm.session_id = $1
+            SELECT COUNT(user_id) AS current_players
+            FROM session_members
+            WHERE session_id = $1
         `;
 
         const currentPlayers = await query(currentPlayersSql, [sessionId]);
@@ -324,35 +324,94 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
     }
 };
 
-// Edit
 export const acceptSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
     const invitationId = Number(req.params.invitationId);
+
+    const client = await pool.connect();
+
     try {
+        const session = await query('SELECT session_id FROM session_invitations WHERE id = $1', [
+            invitationId,
+        ]);
+
+        if (session.rowCount === 0) {
+            res.status(404).json({ message: 'Invitation not found' });
+            return;
+        }
+
+        const sessionId = session.rows[0].session_id;
+
+        const userExist = await query(
+            'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
+            [sessionId, userId],
+        );
+
+        if ((userExist.rowCount ?? 0) > 0) {
+            res.status(409).json({ message: 'User is already in session' });
+            return;
+        }
+
+        const sessionMaxPlayers = await query('SELECT max_players FROM sessions WHERE id = $1', [
+            sessionId,
+        ]);
+
+        const currentPlayers = await query(
+            'SELECT COUNT(id) AS current_players FROM session_members WHERE session_id = $1',
+            [sessionId],
+        );
+
+        const maxPlayers = sessionMaxPlayers.rows[0].max_players;
+        const currentPlayersNum = Number(currentPlayers.rows[0].current_players);
+
+        if (currentPlayersNum >= maxPlayers) {
+            res.status(409).json({ message: 'There are no available spots in the playroom' });
+            return;
+        }
+
+        await client.query('BEGIN');
+
         const sql = `
             UPDATE session_invitations SET status = 'accepted'
             WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const acceptedRequest = await query(sql, [userId, invitationId]);
+        const acceptedRequest = await client.query(sql, [userId, invitationId]);
 
         if (acceptedRequest.rowCount === 0) {
             res.status(409).json({ message: 'Failed to accept invite request in session' });
+            await client.query('ROLLBACK');
             return;
         }
 
+        const userMember = await client.query(
+            `
+                INSERT INTO session_members (session_id, user_id)
+                VALUES ($1, $2)
+                RETURNING id, session_id, user_id, role, joined_at
+            `,
+            [sessionId, userId],
+        );
+
+        await client.query('COMMIT');
+
         res.status(200).json({
-            acceptedRequest: acceptedRequest.rows[0],
+            userMember: userMember.rows[0],
         });
     } catch (error) {
+        await client.query('ROLLBACK');
+
         errorHandler(res, 'Error to accept invite request in session', error);
+    } finally {
+        client.release();
     }
 };
 
 export const rejectSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
     const invitationId = Number(req.params.invitationId);
+
     try {
         const sql = `
             UPDATE session_invitations SET status = 'rejected'
@@ -372,5 +431,34 @@ export const rejectSessionInvitation = async (req: AuthRequest, res: Response): 
         });
     } catch (error) {
         errorHandler(res, 'Error to reject invite request in session', error);
+    }
+};
+
+export const getSessionsInvitations = async (req: AuthRequest, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
+
+    try {
+        const sql = `
+            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.created_at, s.max_players, COUNT(sm.id) AS current_players
+            FROM session_invitations si
+            INNER JOIN users u
+            ON si.sender_id = u.id
+            INNER JOIN sessions s
+            ON si.session_id = s.id
+            INNER JOIN games g
+            ON s.game_id = g.id
+            INNER JOIN session_members sm
+            ON s.id = sm.session_id
+            WHERE si.receiver_id = $1
+            GROUP BY si.id
+        `;
+
+        const userInvitations = await query(sql, [userId]);
+
+        res.status(200).json({
+            userInvitations: userInvitations.rows,
+        });
+    } catch (error) {
+        errorHandler(res, 'Error to get sessions invitations', error);
     }
 };
