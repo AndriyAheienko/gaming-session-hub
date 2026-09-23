@@ -10,7 +10,7 @@ import {
     acceptSessionInvitation,
     rejectSessionInvitation,
     getSessionsInvitations,
-} from '../controllers/sessionControllers.js';
+} from '../controllers/sessionsControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
