@@ -94,3 +94,27 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
         errorHandler(res, 'Error cannot reject friendship request', error);
     }
 };
+
+export const getUserFriends = async (req: AuthRequest, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
+
+    try {
+        const friends = await query(
+            `
+            SELECT u.id, u.name, u.rating_sum, u.avatar_url
+            FROM friendships f
+            INNER JOIN users u
+                ON (f.sender_id = $1 AND u.id = f.receiver_id)
+                OR (f.receiver_id = $1 AND u.id = f.sender_id)
+            WHERE f.status = 'accepted'
+            `,
+            [userId],
+        );
+
+        res.status(200).json({
+            friends: friends.rows,
+        });
+    } catch (error) {
+        errorHandler(res, 'Error to get user list friend', error);
+    }
+};

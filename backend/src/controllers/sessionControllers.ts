@@ -55,17 +55,85 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 export const getSessions = async (req: Request, res: Response): Promise<void> => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const search = req.query.search as string | undefined;
+    const lang = req.query.lang as string | undefined;
+    const sort = req.query.sort as string | undefined;
+
+    const offset = (page - 1) * limit;
+
     try {
-        const sql = `
-            SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name
+        let baseQuery = `
             FROM sessions s
             INNER JOIN games g
             ON s.game_id = g.id
             INNER JOIN users u
             ON s.owner_id = u.id
+            INNER JOIN session_members sm
+            ON s.id = sm.session_id
+            WHERE 1=1
+        `;
+        const values: (string | number)[] = [];
+        let paramIndex = 1;
+
+        if (search) {
+            values.push(`%${search}%`);
+            baseQuery += ` AND (s.title ILIKE $${paramIndex} OR g.name ILIKE $${paramIndex})`;
+            paramIndex++;
+        }
+
+        if (lang) {
+            values.push(lang);
+            baseQuery += ` AND s.language = $${paramIndex}`;
+            paramIndex++;
+        }
+
+        let orderQuery = '';
+        switch (sort) {
+            case 'newest':
+                orderQuery += 'ORDER BY s.created_at DESC';
+                break;
+            case 'oldest':
+                orderQuery += 'ORDER BY s.created_at ASC';
+                break;
+            case 'soonest':
+                orderQuery += 'ORDER BY s.starts_at ASC';
+                break;
+            case 'latest':
+                orderQuery += 'ORDER BY s.starts_at DESC';
+                break;
+            case 'least-free':
+                orderQuery += 'ORDER BY current_players DESC';
+                break;
+            case 'most-free':
+                orderQuery += 'ORDER BY current_players ASC';
+                break;
+            default:
+                orderQuery = 'ORDER BY s.created_at DESC';
+                break;
+        }
+
+        const mainValues = [...values];
+
+        mainValues.push(limit);
+        const limitIndex = paramIndex;
+        paramIndex++;
+
+        mainValues.push(offset);
+        const offsetIndex = paramIndex;
+
+        const sql = `
+            SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            ${baseQuery}
+            GROUP BY s.id
+            ${orderQuery}
+            LIMIT $${limitIndex}
+            OFFSET $${offsetIndex}
+
         `;
 
-        const sessions = await query(sql);
+        const sessions = await query(sql, mainValues);
 
         res.status(200).json({
             sessions: sessions.rows,
