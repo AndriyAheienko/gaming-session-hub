@@ -60,6 +60,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
     const search = req.query.search as string | undefined;
     const lang = req.query.lang as string | undefined;
     const sort = req.query.sort as string | undefined;
+    const available = req.query.available === 'true';
 
     const offset = (page - 1) * limit;
 
@@ -87,6 +88,11 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
             values.push(lang);
             baseQuery += ` AND s.language = $${paramIndex}`;
             paramIndex++;
+        }
+
+        let availableSql = '';
+        if (available) {
+            availableSql += 'HAVING COUNT(sm.id) < s.max_players';
         }
 
         let orderQuery = '';
@@ -127,6 +133,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
             SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             ${baseQuery}
             GROUP BY s.id
+            ${availableSql}
             ${orderQuery}
             LIMIT $${limitIndex}
             OFFSET $${offsetIndex}

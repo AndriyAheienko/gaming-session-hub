@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
 import { errorHandler } from '../utils/errorHandler.js';
@@ -7,11 +7,21 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
     const raterId = req.user?.userId;
     const targetId = Number(req.body.targetId);
     const sessionId = Number(req.params.sessionId);
-    const rating = Number(req.body.rating);
+    const ratingNum = Number(req.body.rating);
 
-    const client = await pool.connect();
+    typeof targetId === 'number' ? targetId : undefined;
+    typeof ratingNum === 'number' ? ratingNum : undefined;
+
+    let client = null;
 
     try {
+        if (!raterId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
         const session = await query('SELECT id, status FROM sessions WHERE id = $1', [sessionId]);
 
         if (session.rowCount === 0) {
@@ -36,6 +46,11 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
+        if (raterId === targetId) {
+            res.status(409).json({ message: 'You cannot grade yourself' });
+            return;
+        }
+
         const targetExist = await query(
             'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
             [sessionId, targetId],
@@ -48,13 +63,8 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        if (raterId === targetId) {
-            res.status(409).json({ message: 'You cannot grade yourself' });
-            return;
-        }
-
-        if (rating < 1 || rating > 5) {
-            res.status(409).json({ message: 'Error while assigning a grade' });
+        if (ratingNum < 1 || ratingNum > 5 || !Number.isInteger(ratingNum)) {
+            res.status(400).json({ message: 'Error while assigning a grade' });
             return;
         }
 
@@ -68,40 +78,37 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
+        client = await pool.connect();
+
         await client.query('BEGIN');
 
-        const sqlRatingCreate = `
+        const sqlRating = `
             INSERT INTO ratings (rater_id, target_id, session_id, rating)
             VALUES ($1, $2, $3, $4)
             RETURNING id, rating, created_at
         `;
 
-        const createRating = await client.query(sqlRatingCreate, [
-            raterId,
-            targetId,
-            sessionId,
-            rating,
-        ]);
+        const rating = await client.query(sqlRating, [raterId, targetId, sessionId, ratingNum]);
 
-        const sqlUpdateRanking = `
+        const sqlUser = `
             UPDATE users SET rating_sum = rating_sum + $1, rating_count = rating_count + 1
             WHERE id = $2
             RETURNING id, name, rating_sum, rating_count, avatar_url
         `;
 
-        const updateRanking = await client.query(sqlUpdateRanking, [rating, targetId]);
+        const user = await client.query(sqlUser, [ratingNum, targetId]);
 
         await client.query('COMMIT');
 
         res.status(201).json({
-            createRating: createRating.rows[0],
-            updateRanking: updateRanking.rows[0],
+            rating: rating.rows[0],
+            user: user.rows[0],
         });
     } catch (error) {
-        await client.query('ROLLBACK');
+        if (client) await client.query('ROLLBACK');
 
         errorHandler(res, 'Error while attempting to rate the player', error);
     } finally {
-        client.release();
+        if (client) client.release();
     }
 };
