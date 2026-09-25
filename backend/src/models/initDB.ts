@@ -6,12 +6,14 @@ export const initDB = async () => {
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
-            email VARCHAR(200) UNIQUE NOT NULL,
+            email VARCHAR(200) NOT NULL,
             password_hash VARCHAR(200) NOT NULL,
             rating_sum NUMERIC(5, 1) NOT NULL DEFAULT 0,
             rating_count INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+
+            CONSTRAINT unique_user_email UNIQUE (email)
         );
 
         -- games
@@ -65,8 +67,15 @@ export const initDB = async () => {
             sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
         );
+
+        -- INDEX friendships
+        CREATE UNIQUE INDEX unique_friendships_between_users
+        ON friendships (
+            LEAST(sender_id, receiver_id),
+            GREATEST(sender_id, receiver_id)
+        )
 
         -- session_invitations
         CREATE TABLE IF NOT EXISTS session_invitations (
@@ -88,7 +97,8 @@ export const initDB = async () => {
             CHECK (rating BETWEEN 1 AND 5),
             CHECK (rater_id <> target_id),
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (session_id, rater_id, target_id)
+
+            CONSTRAINT unique_rating_per_session UNIQUE (session_id, rater_id, target_id)
         );
     `;
 

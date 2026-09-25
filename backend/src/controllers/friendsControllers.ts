@@ -1,13 +1,27 @@
 import type { Response } from 'express';
+
 import type { AuthRequest } from '../types/express.types.js';
 import { errorHandler } from '../utils/errorHandler.js';
 import { query } from '../config/bd.js';
+import { isPostgresError } from '../utils/isPostgresError.js';
 
 export const sendFriendRequest = async (req: AuthRequest, res: Response): Promise<void> => {
     const sender_id = req.user?.userId;
     const receiver_id = Number(req.params.userId);
 
     try {
+        if (!sender_id) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        if (!Number.isFinite(receiver_id) || !Number.isInteger(receiver_id) || receiver_id <= 0) {
+            res.status(400).json({ message: 'Error to get receiver id' });
+            return;
+        }
+
         const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiver_id]);
 
         if (receiverExist.rowCount === 0) {
@@ -39,6 +53,15 @@ export const sendFriendRequest = async (req: AuthRequest, res: Response): Promis
             friendship: friendship.rows[0],
         });
     } catch (error) {
+        if (
+            isPostgresError(error) &&
+            error.code === '23505' &&
+            error.constraint === 'unique_friendships_between_users'
+        ) {
+            res.status(409).json({ message: 'A friendship already exists between the users' });
+            return;
+        }
+
         errorHandler(res, 'Error while attempting to send a friend request', error);
     }
 };
@@ -48,6 +71,22 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
     const friendshipId = Number(req.params.friendshipId);
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        if (
+            !Number.isFinite(friendshipId) ||
+            !Number.isInteger(friendshipId) ||
+            friendshipId <= 0
+        ) {
+            res.status(400).json({ message: 'Error to get friendship id' });
+            return;
+        }
+
         const sql = `
             UPDATE friendships SET status = 'accepted'
             WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
@@ -74,8 +113,24 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
     const friendshipId = Number(req.params.friendshipId);
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        if (
+            !Number.isFinite(friendshipId) ||
+            !Number.isInteger(friendshipId) ||
+            friendshipId <= 0
+        ) {
+            res.status(400).json({ message: 'Error to get friendship id' });
+            return;
+        }
+
         const sql = `
-            UPDATE friendships SET status = 'rejected'
+            DELETE FROM friendships
             WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
             RETURNING id, sender_id, receiver_id, status, created_at  
         `;
@@ -99,6 +154,13 @@ export const getUserFriends = async (req: AuthRequest, res: Response): Promise<v
     const userId = req.user?.userId;
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
         const friends = await query(
             `
             SELECT u.id, u.name, u.rating_sum, u.avatar_url

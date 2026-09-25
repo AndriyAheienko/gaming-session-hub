@@ -1,16 +1,15 @@
 import type { Response } from 'express';
+
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
 import { errorHandler } from '../utils/errorHandler.js';
+import { isPostgresError } from '../utils/isPostgresError.js';
 
 export const rateSessionMember = async (req: AuthRequest, res: Response): Promise<void> => {
     const raterId = req.user?.userId;
     const targetId = Number(req.body.targetId);
     const sessionId = Number(req.params.sessionId);
     const ratingNum = Number(req.body.rating);
-
-    typeof targetId === 'number' ? targetId : undefined;
-    typeof ratingNum === 'number' ? ratingNum : undefined;
 
     let client = null;
 
@@ -19,6 +18,28 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             res.status(401).json({
                 message: 'The user does not have access to perform this operation',
             });
+            return;
+        }
+
+        if (
+            !Number.isFinite(targetId) ||
+            !Number.isInteger(targetId) ||
+            targetId <= 0 ||
+            !Number.isFinite(sessionId) ||
+            !Number.isInteger(sessionId) ||
+            sessionId <= 0
+        ) {
+            res.status(400).json({ message: 'Error while assigning a grade' });
+            return;
+        }
+
+        if (
+            !Number.isFinite(ratingNum) ||
+            ratingNum < 1 ||
+            ratingNum > 5 ||
+            !Number.isInteger(ratingNum)
+        ) {
+            res.status(400).json({ message: 'Error while assigning a grade' });
             return;
         }
 
@@ -63,11 +84,6 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        if (ratingNum < 1 || ratingNum > 5 || !Number.isInteger(ratingNum)) {
-            res.status(400).json({ message: 'Error while assigning a grade' });
-            return;
-        }
-
         const ratingExist = await query(
             'SELECT id FROM ratings WHERE rater_id = $1 AND target_id = $2 AND session_id = $3 ',
             [raterId, targetId, sessionId],
@@ -106,6 +122,15 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
         });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
+
+        if (
+            isPostgresError(error) &&
+            error.code === '23505' &&
+            error.constraint === 'unique_rating_per_session'
+        ) {
+            res.status(409).json({ message: 'You have already rated this user' });
+            return;
+        }
 
         errorHandler(res, 'Error while attempting to rate the player', error);
     } finally {
