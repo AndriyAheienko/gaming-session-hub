@@ -2,44 +2,26 @@ import type { Request, Response } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import z from 'zod';
 
 import { errorHandler } from '../utils/errorHandler.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { query } from '../config/bd.js';
+import { env } from '../config/env.js';
+import { registerSchema, loginSchema } from '../schema/auth.schema.js';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
-    const { name, email, password } = req.body;
-
     try {
-        if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
-            res.status(400).json({ message: 'Registration fields cannot be empty' });
-            return;
-        }
+        const data = registerSchema.parse(req.body);
 
-        if (!name.trim() || !email.trim() || !password.trim()) {
-            res.status(400).json({ message: 'Registration fields cannot be empty' });
-            return;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            res.status(400).json({ message: 'Invalid email entered' });
-            return;
-        }
-
-        if (password.length < 6) {
-            res.status(400).json({ message: 'Invalid password entered' });
-            return;
-        }
-
-        const userExist = await query('SELECT name FROM users WHERE email = $1', [email]);
+        const userExist = await query('SELECT name FROM users WHERE email = $1', [data.email]);
 
         if ((userExist.rowCount ?? 0) > 0) {
             res.status(409).json({ message: 'The user already exists' });
             return;
         }
 
-        const password_hash = await bcrypt.hash(password, 10);
+        const password_hash = await bcrypt.hash(data.password, 10);
 
         const sql = `
             INSERT INTO users (name, email, password_hash)
@@ -47,13 +29,18 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             RETURNING name, email
         `;
 
-        const user = await query(sql, [name, email, password_hash]);
+        const user = await query(sql, [data.name, data.email, password_hash]);
 
         res.status(201).json({
             message: 'The user has been successfully registered',
             user: user.rows[0],
         });
     } catch (error) {
+        if (error instanceof z.ZodError) {
+            res.status(400).json({ message: 'Receipt of incorrect data' });
+            return;
+        }
+
         if (
             isPostgresError(error) &&
             error.code === '23505' &&
@@ -68,27 +55,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
-    const { email, password } = req.body;
-
     try {
-        if (typeof email !== 'string' || typeof password !== 'string') {
-            res.status(400).json({ message: 'Login fields cannot be empty' });
-            return;
-        }
-
-        if (!email.trim() || !password.trim()) {
-            res.status(400).json({ message: 'Login fields cannot be empty' });
-            return;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            res.status(400).json({ message: 'Email or password incorrect' });
-            return;
-        }
+        const data = loginSchema.parse(req.body);
 
         const userExist = await query('SELECT id, password_hash FROM users WHERE email = $1', [
-            email,
+            data.email,
         ]);
 
         if ((userExist.rowCount ?? 0) === 0) {
@@ -96,14 +67,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const isMatch = await bcrypt.compare(password, userExist.rows[0].password_hash);
+        const isMatch = await bcrypt.compare(data.password, userExist.rows[0].password_hash);
 
         if (!isMatch) {
             res.status(401).json({ message: 'Email or password incorrect' });
             return;
         }
 
-        const token = jwt.sign({ userId: userExist.rows[0].id }, process.env.JWT_SECRET as string, {
+        const token = jwt.sign({ userId: userExist.rows[0].id }, env.JWT_SECRET, {
             expiresIn: '1d',
         });
 
@@ -112,6 +83,23 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             token: token,
         });
     } catch (error) {
+        if (error instanceof z.ZodError) {
+            const errors = error.issues.reduce(
+                (acc, error) => {
+                    const [key] = error.path;
+
+                    if (typeof key === 'string') {
+                        acc[key] = error.message;
+                    }
+
+                    return acc;
+                },
+                {} as Record<string, string>,
+            );
+            res.status(400).json({ message: 'Validation failed', errors });
+            return;
+        }
+
         errorHandler(res, 'Error during user login attempt', error);
     }
 };
