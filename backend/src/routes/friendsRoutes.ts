@@ -4,12 +4,12 @@ import {
     acceptFriendRequest,
     rejectFriendRequest,
     getUserFriends,
-} from '../controllers/friendsControllers.js';
+} from '../controllers/friendshipsControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
-router.post('/:userId', protect, sendFriendRequest);
+router.post('/:receiverId', protect, sendFriendRequest);
 router.get('/', protect, getUserFriends);
 router.patch('/:friendshipId/accept', protect, acceptFriendRequest);
 router.patch('/:friendshipId/reject', protect, rejectFriendRequest);

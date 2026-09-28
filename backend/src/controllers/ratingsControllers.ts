@@ -2,14 +2,12 @@ import type { Response } from 'express';
 
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
-import { errorHandler } from '../utils/errorHandler.js';
+import { errorHandler, errorZod } from '../utils/errorHandler.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
+import { ratingBodySchema, ratingsParamsSchema } from '../schema/ratings.schema.js';
 
 export const rateSessionMember = async (req: AuthRequest, res: Response): Promise<void> => {
     const raterId = req.user?.userId;
-    const targetId = Number(req.body.targetId);
-    const sessionId = Number(req.params.sessionId);
-    const ratingNum = Number(req.body.rating);
 
     let client = null;
 
@@ -21,29 +19,12 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        if (
-            !Number.isFinite(targetId) ||
-            !Number.isInteger(targetId) ||
-            targetId <= 0 ||
-            !Number.isFinite(sessionId) ||
-            !Number.isInteger(sessionId) ||
-            sessionId <= 0
-        ) {
-            res.status(400).json({ message: 'Error while assigning a grade' });
-            return;
-        }
+        const params = ratingsParamsSchema.parse(req.params);
+        const body = ratingBodySchema.parse(req.body);
 
-        if (
-            !Number.isFinite(ratingNum) ||
-            ratingNum < 1 ||
-            ratingNum > 5 ||
-            !Number.isInteger(ratingNum)
-        ) {
-            res.status(400).json({ message: 'Error while assigning a grade' });
-            return;
-        }
-
-        const session = await query('SELECT id, status FROM sessions WHERE id = $1', [sessionId]);
+        const session = await query('SELECT id, status FROM sessions WHERE id = $1', [
+            params.sessionId,
+        ]);
 
         if (session.rowCount === 0) {
             res.status(404).json({ message: 'Session not found' });
@@ -57,7 +38,7 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
 
         const meExist = await query(
             'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
-            [sessionId, raterId],
+            [params.sessionId, raterId],
         );
 
         if (meExist.rowCount === 0) {
@@ -67,14 +48,14 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        if (raterId === targetId) {
+        if (raterId === body.targetId) {
             res.status(409).json({ message: 'You cannot grade yourself' });
             return;
         }
 
         const targetExist = await query(
             'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
-            [sessionId, targetId],
+            [params.sessionId, body.targetId],
         );
 
         if (targetExist.rowCount === 0) {
@@ -86,7 +67,7 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
 
         const ratingExist = await query(
             'SELECT id FROM ratings WHERE rater_id = $1 AND target_id = $2 AND session_id = $3 ',
-            [raterId, targetId, sessionId],
+            [raterId, body.targetId, params.sessionId],
         );
 
         if ((ratingExist.rowCount ?? 0) > 0) {
@@ -104,7 +85,12 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             RETURNING id, rating, created_at
         `;
 
-        const rating = await client.query(sqlRating, [raterId, targetId, sessionId, ratingNum]);
+        const rating = await client.query(sqlRating, [
+            raterId,
+            body.targetId,
+            params.sessionId,
+            body.rating,
+        ]);
 
         const sqlUser = `
             UPDATE users SET rating_sum = rating_sum + $1, rating_count = rating_count + 1
@@ -112,7 +98,7 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             RETURNING id, name, rating_sum, rating_count, avatar_url
         `;
 
-        const user = await client.query(sqlUser, [ratingNum, targetId]);
+        const user = await client.query(sqlUser, [body.rating, body.targetId]);
 
         await client.query('COMMIT');
 
@@ -121,6 +107,10 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             user: user.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         if (client) await client.query('ROLLBACK');
 
         if (

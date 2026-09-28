@@ -34,7 +34,7 @@ export const initDB = async () => {
             game_id INTEGER NOT NULL REFERENCES games(id),
             owner_id INTEGER NOT NULL REFERENCES users(id),
             status VARCHAR(50) NOT NULL DEFAULT 'waiting',
-            max_players INTEGER NOT NULL,
+            max_players INTEGER NOT NULL CHECK (max_players BETWEEN 1 AND 100),
             starts_at TIMESTAMPTZ NOT NULL,
             language VARCHAR(50) NOT NULL DEFAULT 'eng',
             mic_required BOOLEAN NOT NULL DEFAULT FALSE,

@@ -1,0 +1,32 @@
+import z from 'zod';
+
+export const bodySchema = z.object({
+    title: z.string().trim().min(1).max(200),
+    gameId: z.number().int().positive(),
+    maxPlayers: z.number().int().positive().max(100),
+    startsAt: z.coerce.date().refine(val => val > new Date(), {
+        message: 'The session start time must be in the future',
+    }),
+    language: z.enum(['eng', 'ua']),
+    micRequired: z.boolean(),
+    description: z.string().optional(),
+});
+
+export const querySchema = z.object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+    search: z.string().trim().optional(),
+    language: z.enum(['eng', 'ua']).optional(),
+    sort: z
+        .enum(['newest', 'oldest', 'soonest', 'latest', 'least-free', 'most-free'])
+        .default('newest'),
+    available: z
+        .preprocess(
+            val => {
+                if (val === 'true') return true;
+                if (val === 'false') return false;
+            },
+            z.boolean({ message: 'Must be true or false' }),
+        )
+        .default(false),
+});

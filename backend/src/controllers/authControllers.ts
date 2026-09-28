@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import z from 'zod';
 
-import { errorHandler } from '../utils/errorHandler.js';
+import { errorHandler, errorZod } from '../utils/errorHandler.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { query } from '../config/bd.js';
 import { env } from '../config/env.js';
@@ -36,8 +36,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             user: user.rows[0],
         });
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            res.status(400).json({ message: 'Receipt of incorrect data' });
+        if (errorZod(res, error)) {
             return;
         }
 
@@ -79,24 +78,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         });
 
         res.status(200).json({
-            message: 'The user has been successfully login',
+            message: 'The user has successfully logged in',
             token: token,
         });
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            const errors = error.issues.reduce(
-                (acc, error) => {
-                    const [key] = error.path;
-
-                    if (typeof key === 'string') {
-                        acc[key] = error.message;
-                    }
-
-                    return acc;
-                },
-                {} as Record<string, string>,
-            );
-            res.status(400).json({ message: 'Validation failed', errors });
+        if (errorZod(res, error)) {
             return;
         }
 
@@ -126,6 +112,6 @@ export const getMyInfo = async (req: AuthRequest, res: Response): Promise<void> 
             user: user.rows[0],
         });
     } catch (error) {
-        errorHandler(res, 'Error during get info about user', error);
+        errorHandler(res, 'Error retrieving user information', error);
     }
 };

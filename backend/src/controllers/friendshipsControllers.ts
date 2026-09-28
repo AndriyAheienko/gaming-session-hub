@@ -1,42 +1,39 @@
 import type { Response } from 'express';
 
 import type { AuthRequest } from '../types/express.types.js';
-import { errorHandler } from '../utils/errorHandler.js';
+import { errorHandler, errorZod } from '../utils/errorHandler.js';
 import { query } from '../config/bd.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
+import { receiverSchema, friendshipSchema } from '../schema/friendships.schema.js';
 
 export const sendFriendRequest = async (req: AuthRequest, res: Response): Promise<void> => {
-    const sender_id = req.user?.userId;
-    const receiver_id = Number(req.params.userId);
+    const senderId = req.user?.userId;
 
     try {
-        if (!sender_id) {
+        if (!senderId) {
             res.status(401).json({
                 message: 'The user does not have access to perform this operation',
             });
             return;
         }
 
-        if (!Number.isFinite(receiver_id) || !Number.isInteger(receiver_id) || receiver_id <= 0) {
-            res.status(400).json({ message: 'Error to get receiver id' });
-            return;
-        }
+        const data = receiverSchema.parse(req.params);
 
-        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiver_id]);
+        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [data.receiverId]);
 
         if (receiverExist.rowCount === 0) {
             res.status(404).json({ message: 'Receiver not found' });
             return;
         }
 
-        if (sender_id === receiver_id) {
+        if (senderId === data.receiverId) {
             res.status(400).json({ message: 'You cannot send a request to yourself' });
             return;
         }
 
         const friendshipExist = await query(
             'SELECT id FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (receiver_id = $1 AND sender_id = $2)',
-            [sender_id, receiver_id],
+            [senderId, data.receiverId],
         );
 
         if ((friendshipExist.rowCount ?? 0) > 0) {
@@ -46,13 +43,17 @@ export const sendFriendRequest = async (req: AuthRequest, res: Response): Promis
 
         const friendship = await query(
             'INSERT INTO friendships (sender_id, receiver_id) VALUES ($1, $2) RETURNING id, sender_id, receiver_id, status, created_at',
-            [sender_id, receiver_id],
+            [senderId, data.receiverId],
         );
 
         res.status(201).json({
             friendship: friendship.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         if (
             isPostgresError(error) &&
             error.code === '23505' &&
@@ -68,7 +69,6 @@ export const sendFriendRequest = async (req: AuthRequest, res: Response): Promis
 
 export const acceptFriendRequest = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
-    const friendshipId = Number(req.params.friendshipId);
 
     try {
         if (!userId) {
@@ -78,14 +78,7 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
             return;
         }
 
-        if (
-            !Number.isFinite(friendshipId) ||
-            !Number.isInteger(friendshipId) ||
-            friendshipId <= 0
-        ) {
-            res.status(400).json({ message: 'Error to get friendship id' });
-            return;
-        }
+        const data = friendshipSchema.parse(req.params);
 
         const sql = `
             UPDATE friendships SET status = 'accepted'
@@ -93,7 +86,7 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
             RETURNING id, sender_id, receiver_id, status, created_at 
         `;
 
-        const acceptRequest = await query(sql, [friendshipId, userId]);
+        const acceptRequest = await query(sql, [data.friendshipId, userId]);
 
         if (acceptRequest.rows.length === 0) {
             res.status(400).json({ message: 'Failed to accept the friend request' });
@@ -104,13 +97,16 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
             acceptRequest: acceptRequest.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         errorHandler(res, 'Error cannot accept friendship request', error);
     }
 };
 
 export const rejectFriendRequest = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
-    const friendshipId = Number(req.params.friendshipId);
 
     try {
         if (!userId) {
@@ -120,14 +116,7 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
             return;
         }
 
-        if (
-            !Number.isFinite(friendshipId) ||
-            !Number.isInteger(friendshipId) ||
-            friendshipId <= 0
-        ) {
-            res.status(400).json({ message: 'Error to get friendship id' });
-            return;
-        }
+        const data = friendshipSchema.parse(req.params);
 
         const sql = `
             DELETE FROM friendships
@@ -135,7 +124,7 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
             RETURNING id, sender_id, receiver_id, status, created_at  
         `;
 
-        const rejectRequest = await query(sql, [friendshipId, userId]);
+        const rejectRequest = await query(sql, [data.friendshipId, userId]);
 
         if (rejectRequest.rows.length === 0) {
             res.status(400).json({ message: 'Failed to reject the friend request' });
@@ -146,6 +135,10 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
             rejectRequest: rejectRequest.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         errorHandler(res, 'Error cannot reject friendship request', error);
     }
 };

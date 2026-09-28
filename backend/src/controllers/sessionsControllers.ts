@@ -1,15 +1,27 @@
 import type { Request, Response } from 'express';
+
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
-import { errorHandler } from '../utils/errorHandler.js';
+import { errorHandler, errorZod } from '../utils/errorHandler.js';
+import { bodySchema, querySchema } from '../schema/sessions.schema.js';
 
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
-    const { title, gameId, maxPlayers, startsAt, language, micRequired, description } = req.body;
     const ownerId = req.user?.userId;
 
-    const client = await pool.connect();
+    let client = null;
 
     try {
+        if (!ownerId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const body = bodySchema.parse(req.body);
+
+        client = await pool.connect();
+
         await client.query('BEGIN');
 
         const sql = `
@@ -19,13 +31,13 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
         `;
 
         const session = await client.query(sql, [
-            title,
-            gameId,
-            maxPlayers,
-            startsAt,
-            language,
-            micRequired,
-            description,
+            body.title,
+            body.gameId,
+            body.maxPlayers,
+            body.startsAt,
+            body.language,
+            body.micRequired,
+            body.description,
             ownerId,
         ]);
 
@@ -46,25 +58,24 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
             ownerUser: owner.rows[0],
         });
     } catch (error) {
-        await client.query('ROLLBACK');
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        if (client) await client.query('ROLLBACK');
 
         errorHandler(res, 'Error creating game session', error);
     } finally {
-        client.release();
+        if (client) client.release();
     }
 };
 
 export const getSessions = async (req: Request, res: Response): Promise<void> => {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
-    const search = req.query.search as string | undefined;
-    const lang = req.query.lang as string | undefined;
-    const sort = req.query.sort as string | undefined;
-    const available = req.query.available === 'true';
-
-    const offset = (page - 1) * limit;
-
     try {
+        const reqQuery = querySchema.parse(req.query);
+
+        const offset = (reqQuery.page - 1) * reqQuery.limit;
+
         let baseQuery = `
             FROM sessions s
             INNER JOIN games g
@@ -78,25 +89,25 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
         const values: (string | number)[] = [];
         let paramIndex = 1;
 
-        if (search) {
-            values.push(`%${search}%`);
+        if (reqQuery.search) {
+            values.push(`%${reqQuery.search}%`);
             baseQuery += ` AND (s.title ILIKE $${paramIndex} OR g.name ILIKE $${paramIndex})`;
             paramIndex++;
         }
 
-        if (lang) {
-            values.push(lang);
+        if (reqQuery.language) {
+            values.push(reqQuery.language);
             baseQuery += ` AND s.language = $${paramIndex}`;
             paramIndex++;
         }
 
         let availableSql = '';
-        if (available) {
+        if (reqQuery.available) {
             availableSql += 'HAVING COUNT(sm.id) < s.max_players';
         }
 
         let orderQuery = '';
-        switch (sort) {
+        switch (reqQuery.sort) {
             case 'newest':
                 orderQuery += 'ORDER BY s.created_at DESC';
                 break;
@@ -122,7 +133,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
 
         const mainValues = [...values];
 
-        mainValues.push(limit);
+        mainValues.push(reqQuery.limit);
         const limitIndex = paramIndex;
         paramIndex++;
 
@@ -146,6 +157,10 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
             sessions: sessions.rows,
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         errorHandler(res, 'Error retrieving game sessions', error);
     }
 };
@@ -513,6 +528,13 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
     const userId = req.user?.userId;
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
         const sql = `
             SELECT u.name AS sender_name, g.name AS game_name, s.title, s.created_at, s.max_players, COUNT(sm.id) AS current_players
             FROM session_invitations si
