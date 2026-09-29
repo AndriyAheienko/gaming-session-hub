@@ -3,7 +3,14 @@ import type { Request, Response } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
 import { errorHandler, errorZod } from '../utils/errorHandler.js';
-import { bodySchema, querySchema } from '../schema/sessions.schema.js';
+import { isPostgresError } from '../utils/isPostgresError.js';
+import {
+    bodySchema,
+    querySchema,
+    sessionIdSchema,
+    sendInvitationParamsSchema,
+    invitationIdSchema,
+} from '../schema/sessions.schema.js';
 
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const ownerId = req.user?.userId;
@@ -166,9 +173,9 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
 };
 
 export const getSessionById = async (req: Request, res: Response): Promise<void> => {
-    const sessionId = Number(req.params.id);
-
     try {
+        const data = sessionIdSchema.parse(req.params);
+
         const sql = `
             SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             FROM sessions s
@@ -176,13 +183,13 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             ON s.game_id = g.id
             INNER JOIN users u
             ON s.owner_id = u.id
-            INNER JOIN session_members sm
+            LEFT JOIN session_members sm
             ON s.id = sm.session_id
             WHERE s.id = $1
             GROUP BY s.id
         `;
 
-        const session = await query(sql, [sessionId]);
+        const session = await query(sql, [data.sessionId]);
 
         if ((session.rowCount ?? 0) === 0) {
             res.status(404).json({ message: 'Session not found' });
@@ -193,20 +200,17 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             session: session.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         errorHandler(res, 'Error retrieving game session', error);
     }
 };
 
 export const getSessionMembers = async (req: Request, res: Response): Promise<void> => {
-    const sessionId = Number(req.params.id);
-
     try {
-        const sessionExist = await query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
-
-        if (sessionExist.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found' });
-            return;
-        }
+        const data = sessionIdSchema.parse(req.params);
 
         const sqlMembers = `
             SELECT sm.role, sm.joined_at, u.id, u.name, u.avatar_url, u.rating_sum, u.rating_count
@@ -216,27 +220,51 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
             WHERE sm.session_id = $1
         `;
 
-        const sessionMembers = await query(sqlMembers, [sessionId]);
+        const sessionMembers = await query(sqlMembers, [data.sessionId]);
+
+        if (sessionMembers.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found' });
+            return;
+        }
 
         res.status(200).json({
             members: sessionMembers.rows,
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         errorHandler(res, 'Error retrieving session members', error);
     }
 };
 
 export const joinSession = async (req: AuthRequest, res: Response): Promise<void> => {
-    const sessionId = Number(req.params.id);
     const memberId = req.user?.userId;
+    let client = null;
 
     try {
-        const session = await query('SELECT s.id, s.max_players FROM sessions s WHERE s.id = $1', [
-            sessionId,
-        ]);
+        if (!memberId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = sessionIdSchema.parse(req.params);
+
+        client = await pool.connect();
+
+        await client.query('BEGIN');
+
+        const session = await client.query(
+            'SELECT s.id, s.max_players FROM sessions s WHERE s.id = $1 FOR UPDATE',
+            [data.sessionId],
+        );
 
         if (session.rowCount === 0) {
             res.status(404).json({ message: 'Session not found' });
+            await client.query('ROLLBACK');
             return;
         }
 
@@ -246,27 +274,29 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             WHERE session_id = $1
         `;
 
-        const currentPlayers = await query(currentPlayersSql, [sessionId]);
+        const currentPlayers = await client.query(currentPlayersSql, [data.sessionId]);
 
         const currentPlayersCount = Number(currentPlayers.rows[0].current_players);
         const maxPlayers = session.rows[0].max_players;
 
         if (currentPlayersCount >= maxPlayers) {
             res.status(409).json({ message: 'Sorry, but the session is full of players' });
+            await client.query('ROLLBACK');
             return;
         }
 
-        const memberExist = await query(
+        const memberExist = await client.query(
             `
                 SELECT id
                 FROM session_members
                 WHERE session_id = $1 AND user_id = $2
             `,
-            [sessionId, memberId],
+            [data.sessionId, memberId],
         );
 
         if ((memberExist.rowCount ?? 0) > 0) {
             res.status(409).json({ message: 'The user is already part of this session' });
+            await client.query('ROLLBACK');
             return;
         }
 
@@ -276,27 +306,47 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             RETURNING session_id, user_id, role, joined_at 
         `;
 
-        const sessionMember = await query(sql, [sessionId, memberId]);
+        const sessionMember = await client.query(sql, [data.sessionId, memberId]);
+
+        await client.query('COMMIT');
 
         res.status(201).json({
             session_member: sessionMember.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        if (client) await client.query('ROLLBACK');
+
+        if (
+            isPostgresError(error) &&
+            error.code === '23505' &&
+            error.constraint === 'unique_session_member'
+        ) {
+            res.status(409).json({ message: 'You are already a member of this session' });
+            return;
+        }
+
         errorHandler(res, 'Failed to join the session', error);
+    } finally {
+        if (client) client.release();
     }
 };
 
 export const leaveSession = async (req: AuthRequest, res: Response): Promise<void> => {
-    const sessionId = Number(req.params.id);
     const userId = req.user?.userId;
 
     try {
-        const session = await query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
-
-        if (session.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found' });
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
             return;
         }
+
+        const data = sessionIdSchema.parse(req.params);
 
         const sqlExist = `
             SELECT role
@@ -304,17 +354,17 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
             WHERE session_id = $1 AND user_id = $2
         `;
 
-        const userExist = await query(sqlExist, [sessionId, userId]);
+        const userExist = await query(sqlExist, [data.sessionId, userId]);
 
         if (userExist.rowCount === 0) {
             res.status(409).json({ message: 'The user is not a participant in the session' });
             return;
         }
 
-        if (userExist.rows[0].role === 'member') {
+        if (userExist.rows[0].role !== 'owner') {
             const deleteMember = await query(
-                'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2 RETURNING id',
-                [sessionId, userId],
+                'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
+                [data.sessionId, userId],
             );
 
             if (deleteMember.rowCount === 0) {
@@ -329,12 +379,13 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        const deleteSession = await query('DELETE FROM sessions WHERE id = $1 RETURNING id', [
-            sessionId,
+        const deleteSession = await query('DELETE FROM sessions WHERE id = $1 AND owner_id = $2', [
+            data.sessionId,
+            userId,
         ]);
 
         if (deleteSession.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found for deletion' });
+            res.status(404).json({ message: 'User not found in this session' });
             return;
         }
 
@@ -346,29 +397,36 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
 
 export const sendSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const senderId = req.user?.userId;
-    const receiver_id = Number(req.params.userId);
-    const sessionId = Number(req.params.sessionId);
 
     try {
+        if (!senderId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = sendInvitationParamsSchema.parse(req.params);
+
         const sqlSessionExist = `
             SELECT owner_id
             FROM sessions
             WHERE id = $1 AND owner_id = $2
         `;
 
-        const ownerSessionExist = await query(sqlSessionExist, [sessionId, senderId]);
+        const sessionOwner = await query(sqlSessionExist, [data.sessionId, senderId]);
 
-        if (ownerSessionExist.rowCount === 0) {
+        if (sessionOwner.rowCount === 0) {
             res.status(404).json({ message: 'Session not found' });
             return;
         }
 
-        if (ownerSessionExist.rows[0].owner_id === receiver_id) {
+        if (senderId === data.receiverId) {
             res.status(400).json({ message: 'You cannot send a request to yourself' });
             return;
         }
 
-        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiver_id]);
+        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [data.receiverId]);
 
         if (receiverExist.rowCount === 0) {
             res.status(404).json({ message: 'Receiver not found' });
@@ -377,10 +435,10 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
 
         const receiverMember = await query(
             `
-            SELECT id FROM session_members
-            WHERE session_id = $1 AND user_id = $2
+                SELECT id FROM session_members
+                WHERE session_id = $1 AND user_id = $2
             `,
-            [sessionId, receiver_id],
+            [data.sessionId, data.receiverId],
         );
 
         if ((receiverMember.rowCount ?? 0) > 0) {
@@ -390,7 +448,7 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
 
         const invitationExist = await query(
             `SELECT status FROM session_invitations WHERE session_id = $1 AND sender_id = $2 AND receiver_id = $3 AND status = 'pending'`,
-            [sessionId, senderId, receiver_id],
+            [data.sessionId, senderId, data.receiverId],
         );
 
         if ((invitationExist.rowCount ?? 0) > 0) {
@@ -404,25 +462,46 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const sessionInvitation = await query(sql, [sessionId, senderId, receiver_id]);
+        const sessionInvitation = await query(sql, [data.sessionId, senderId, data.receiverId]);
 
         res.status(201).json({
             sessionInvitation: sessionInvitation.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        if (
+            isPostgresError(error) &&
+            error.code === '23505' &&
+            error.constraint === 'unique_pending_session_invitation'
+        ) {
+            res.status(409).json({ message: 'You cannot resend an existing invitation' });
+            return;
+        }
+
         errorHandler(res, 'Failed to session invitation', error);
     }
 };
 
 export const acceptSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
-    const invitationId = Number(req.params.invitationId);
 
-    const client = await pool.connect();
+    let client = null;
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = invitationIdSchema.parse(req.params);
+
         const session = await query('SELECT session_id FROM session_invitations WHERE id = $1', [
-            invitationId,
+            data.invitationId,
         ]);
 
         if (session.rowCount === 0) {
@@ -442,9 +521,14 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
-        const sessionMaxPlayers = await query('SELECT max_players FROM sessions WHERE id = $1', [
-            sessionId,
-        ]);
+        client = await pool.connect();
+
+        await client.query('BEGIN');
+
+        const sessionMaxPlayers = await query(
+            'SELECT max_players FROM sessions WHERE id = $1 FOR UPDATE',
+            [sessionId],
+        );
 
         const currentPlayers = await query(
             'SELECT COUNT(id) AS current_players FROM session_members WHERE session_id = $1',
@@ -459,15 +543,13 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
-        await client.query('BEGIN');
-
         const sql = `
             UPDATE session_invitations SET status = 'accepted'
             WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const acceptedRequest = await client.query(sql, [userId, invitationId]);
+        const acceptedRequest = await client.query(sql, [userId, data.invitationId]);
 
         if (acceptedRequest.rowCount === 0) {
             res.status(409).json({ message: 'Failed to accept invite request in session' });
@@ -490,11 +572,24 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             userMember: userMember.rows[0],
         });
     } catch (error) {
-        await client.query('ROLLBACK');
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        if (
+            isPostgresError(error) &&
+            error.code === '23505' &&
+            error.constraint === 'unique_pending_session_invitation'
+        ) {
+            res.status(409).json({ message: 'You cannot accept the session invitation again' });
+            return;
+        }
+
+        if (client) await client.query('ROLLBACK');
 
         errorHandler(res, 'Error to accept invite request in session', error);
     } finally {
-        client.release();
+        if (client) client.release();
     }
 };
 

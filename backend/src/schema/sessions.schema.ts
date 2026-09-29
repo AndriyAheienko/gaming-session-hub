@@ -30,3 +30,16 @@ export const querySchema = z.object({
         )
         .default(false),
 });
+
+export const sessionIdSchema = z.object({
+    sessionId: z.coerce.number().int().positive(),
+});
+
+export const sendInvitationParamsSchema = z.object({
+    sessionId: z.coerce.number().int().positive(),
+    receiverId: z.coerce.number().int().positive(),
+});
+
+export const invitationIdSchema = z.object({
+    invitationId: z.coerce.number().int().positive(),
+});

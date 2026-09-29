@@ -26,7 +26,7 @@ router.patch('/invitations/:invitationId/reject', protect, rejectSessionInvitati
 
 router.get('/:id/members', getSessionMembers);
 
-router.post('/:sessionId/invitations/:userId', protect, sendSessionInvitation);
+router.post('/:sessionId/invitations/:receiverId', protect, sendSessionInvitation);
 router.post('/:sessionId/ratings', protect, rateSessionMember);
 
 router.post('/:id/join', protect, joinSession);

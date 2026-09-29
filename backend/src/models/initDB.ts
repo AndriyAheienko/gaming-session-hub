@@ -49,7 +49,7 @@ export const initDB = async () => {
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             role VARCHAR(50) NOT NULL DEFAULT 'member',
             joined_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (session_id, user_id)
+            CONSTRAINT unique_session_member UNIQUE (session_id, user_id)
         );
 
         -- messages
@@ -86,6 +86,15 @@ export const initDB = async () => {
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- INDEX session_invitations
+        CREATE UNIQUE INDEX unique_pending_session_invitation
+        ON session_invitations (
+            session_id,
+            sender_id,
+            receiver_id
+        )
+        WHERE status = 'pending';
 
         -- ratings
         CREATE TABLE IF NOT EXISTS ratings (
