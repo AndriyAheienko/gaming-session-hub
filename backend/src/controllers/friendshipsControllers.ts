@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 
 import type { AuthRequest } from '../types/express.types.js';
-import { errorHandler, errorZod } from '../utils/errorHandler.js';
+import { errorZod } from '../utils/errorZod.js';
 import { query } from '../config/bd.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { receiverSchema, friendshipSchema } from '../schema/friendships.schema.js';
@@ -63,7 +63,7 @@ export const sendFriendRequest = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        errorHandler(res, 'Error while attempting to send a friend request', error);
+        throw error;
     }
 };
 
@@ -101,7 +101,7 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
             return;
         }
 
-        errorHandler(res, 'Error cannot accept friendship request', error);
+        throw error;
     }
 };
 
@@ -119,14 +119,14 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
         const data = friendshipSchema.parse(req.params);
 
         const sql = `
-            DELETE FROM friendships
+            UPDATE friendships SET status = 'rejected'
             WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
             RETURNING id, sender_id, receiver_id, status, created_at  
         `;
 
         const rejectRequest = await query(sql, [data.friendshipId, userId]);
 
-        if (rejectRequest.rows.length === 0) {
+        if (rejectRequest.rowCount === 0) {
             res.status(400).json({ message: 'Failed to reject the friend request' });
             return;
         }
@@ -139,7 +139,7 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
             return;
         }
 
-        errorHandler(res, 'Error cannot reject friendship request', error);
+        throw error;
     }
 };
 
@@ -170,6 +170,6 @@ export const getUserFriends = async (req: AuthRequest, res: Response): Promise<v
             friends: friends.rows,
         });
     } catch (error) {
-        errorHandler(res, 'Error to get user list friend', error);
+        throw error;
     }
 };

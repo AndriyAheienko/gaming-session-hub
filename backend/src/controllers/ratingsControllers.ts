@@ -2,7 +2,7 @@ import type { Response } from 'express';
 
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
-import { errorHandler, errorZod } from '../utils/errorHandler.js';
+import { errorZod } from '../utils/errorZod.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { ratingBodySchema, ratingsParamsSchema } from '../schema/ratings.schema.js';
 
@@ -122,7 +122,7 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
             return;
         }
 
-        errorHandler(res, 'Error while attempting to rate the player', error);
+        throw error;
     } finally {
         if (client) client.release();
     }

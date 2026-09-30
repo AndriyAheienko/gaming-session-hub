@@ -1,11 +1,20 @@
 import 'dotenv/config';
+import z from 'zod';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const envSchema = z.object({
+    DATABASE_URL: z.string().trim().min(1),
+    JWT_SECRET: z.string().trim().min(30),
+    PORT: z.coerce.number().int().positive(),
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    CORS_ORIGIN: z.string().trim().min(1),
+});
 
-if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined');
-}
+const parsedEnv = envSchema.parse(process.env);
 
 export const env = {
-    JWT_SECRET,
+    DATABASE_URL: parsedEnv.DATABASE_URL,
+    JWT_SECRET: parsedEnv.JWT_SECRET,
+    PORT: parsedEnv.PORT,
+    NODE_ENV: parsedEnv.NODE_ENV,
+    CORS_ORIGIN: parsedEnv.CORS_ORIGIN,
 };

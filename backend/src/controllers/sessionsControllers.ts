@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
-import { errorHandler, errorZod } from '../utils/errorHandler.js';
+import { errorZod } from '../utils/errorZod.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import {
     bodySchema,
@@ -71,7 +71,7 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         if (client) await client.query('ROLLBACK');
 
-        errorHandler(res, 'Error creating game session', error);
+        throw error;
     } finally {
         if (client) client.release();
     }
@@ -86,11 +86,11 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
         let baseQuery = `
             FROM sessions s
             INNER JOIN games g
-            ON s.game_id = g.id
+                ON s.game_id = g.id
             INNER JOIN users u
-            ON s.owner_id = u.id
+                ON s.owner_id = u.id
             INNER JOIN session_members sm
-            ON s.id = sm.session_id
+                ON s.id = sm.session_id
             WHERE 1=1
         `;
         const values: (string | number)[] = [];
@@ -168,7 +168,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
             return;
         }
 
-        errorHandler(res, 'Error retrieving game sessions', error);
+        throw error;
     }
 };
 
@@ -180,11 +180,11 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             FROM sessions s
             INNER JOIN games g
-            ON s.game_id = g.id
+                ON s.game_id = g.id
             INNER JOIN users u
-            ON s.owner_id = u.id
+                ON s.owner_id = u.id
             LEFT JOIN session_members sm
-            ON s.id = sm.session_id
+                ON s.id = sm.session_id
             WHERE s.id = $1
             GROUP BY s.id
         `;
@@ -204,7 +204,7 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        errorHandler(res, 'Error retrieving game session', error);
+        throw error;
     }
 };
 
@@ -216,7 +216,7 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
             SELECT sm.role, sm.joined_at, u.id, u.name, u.avatar_url, u.rating_sum, u.rating_count
             FROM session_members sm
             INNER JOIN users u
-            ON sm.user_id = u.id
+                ON sm.user_id = u.id
             WHERE sm.session_id = $1
         `;
 
@@ -235,7 +235,7 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        errorHandler(res, 'Error retrieving session members', error);
+        throw error;
     }
 };
 
@@ -329,7 +329,7 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        errorHandler(res, 'Failed to join the session', error);
+        throw error;
     } finally {
         if (client) client.release();
     }
@@ -391,7 +391,7 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
 
         res.status(200).json({ message: 'User leave and deletion session successfully' });
     } catch (error) {
-        errorHandler(res, 'Failed to leave the session', error);
+        throw error;
     }
 };
 
@@ -481,7 +481,7 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
             return;
         }
 
-        errorHandler(res, 'Failed to session invitation', error);
+        throw error;
     }
 };
 
@@ -500,62 +500,89 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
 
         const data = invitationIdSchema.parse(req.params);
 
-        const session = await query('SELECT session_id FROM session_invitations WHERE id = $1', [
-            data.invitationId,
-        ]);
-
-        if (session.rowCount === 0) {
-            res.status(404).json({ message: 'Invitation not found' });
-            return;
-        }
-
-        const sessionId = session.rows[0].session_id;
-
-        const userExist = await query(
-            'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
-            [sessionId, userId],
-        );
-
-        if ((userExist.rowCount ?? 0) > 0) {
-            res.status(409).json({ message: 'User is already in session' });
-            return;
-        }
-
         client = await pool.connect();
 
         await client.query('BEGIN');
 
-        const sessionMaxPlayers = await query(
-            'SELECT max_players FROM sessions WHERE id = $1 FOR UPDATE',
+        const invitation = await client.query(
+            `
+                SELECT id, session_id, sender_id, receiver_id, status
+                FROM session_invitations
+                WHERE id = $1 AND receiver_id = $2
+                FOR UPDATE
+            `,
+            [data.invitationId, userId],
+        );
+
+        if (invitation.rowCount === 0) {
+            await client.query('ROLLBACK');
+
+            res.status(404).json({
+                message: 'Invitation not found',
+            });
+            return;
+        }
+
+        if (invitation.rows[0].status !== 'pending') {
+            await client.query('ROLLBACK');
+
+            res.status(409).json({
+                message: 'The invitation has already been processed',
+            });
+            return;
+        }
+
+        const sessionId = invitation.rows[0].session_id;
+
+        const session = await client.query(
+            `
+                SELECT id, max_players
+                FROM sessions
+                WHERE id = $1
+                FOR UPDATE
+            `,
             [sessionId],
         );
 
-        const currentPlayers = await query(
-            'SELECT COUNT(id) AS current_players FROM session_members WHERE session_id = $1',
+        if (session.rowCount === 0) {
+            await client.query('ROLLBACK');
+
+            res.status(404).json({
+                message: 'Session not found',
+            });
+            return;
+        }
+
+        const currentPlayers = await client.query(
+            `
+                SELECT COUNT(id) AS current_players
+                FROM session_members
+                WHERE session_id = $1
+            `,
             [sessionId],
         );
 
-        const maxPlayers = sessionMaxPlayers.rows[0].max_players;
+        const maxPlayers = session.rows[0].max_players;
         const currentPlayersNum = Number(currentPlayers.rows[0].current_players);
 
         if (currentPlayersNum >= maxPlayers) {
-            res.status(409).json({ message: 'There are no available spots in the playroom' });
-            return;
-        }
-
-        const sql = `
-            UPDATE session_invitations SET status = 'accepted'
-            WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
-            RETURNING id, session_id, sender_id, receiver_id, status, created_at
-        `;
-
-        const acceptedRequest = await client.query(sql, [userId, data.invitationId]);
-
-        if (acceptedRequest.rowCount === 0) {
-            res.status(409).json({ message: 'Failed to accept invite request in session' });
             await client.query('ROLLBACK');
+
+            res.status(409).json({
+                message: 'There are no available spots in the playroom',
+            });
             return;
         }
+
+        const acceptedRequest = await client.query(
+            `
+                UPDATE session_invitations
+                SET status = 'accepted'
+                WHERE id = $1
+                RETURNING id, session_id, sender_id, receiver_id, status, created_at
+            `,
+            [data.invitationId],
+        );
 
         const userMember = await client.query(
             `
@@ -569,6 +596,7 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
         await client.query('COMMIT');
 
         res.status(200).json({
+            invitation: acceptedRequest.rows[0],
             userMember: userMember.rows[0],
         });
     } catch (error) {
@@ -576,35 +604,49 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
+        if (client) {
+            await client.query('ROLLBACK');
+        }
+
         if (
             isPostgresError(error) &&
             error.code === '23505' &&
-            error.constraint === 'unique_pending_session_invitation'
+            error.constraint === 'unique_session_member'
         ) {
-            res.status(409).json({ message: 'You cannot accept the session invitation again' });
+            res.status(409).json({
+                message: 'User is already in session',
+            });
             return;
         }
 
-        if (client) await client.query('ROLLBACK');
-
-        errorHandler(res, 'Error to accept invite request in session', error);
+        throw error;
     } finally {
-        if (client) client.release();
+        if (client) {
+            client.release();
+        }
     }
 };
 
 export const rejectSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
-    const invitationId = Number(req.params.invitationId);
 
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = invitationIdSchema.parse(req.params);
+
         const sql = `
             UPDATE session_invitations SET status = 'rejected'
             WHERE receiver_id = $1 AND id = $2 AND status = 'pending'
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const rejectedRequest = await query(sql, [userId, invitationId]);
+        const rejectedRequest = await query(sql, [userId, data.invitationId]);
 
         if (rejectedRequest.rowCount === 0) {
             res.status(409).json({ message: 'Failed to reject invite request in session' });
@@ -615,7 +657,11 @@ export const rejectSessionInvitation = async (req: AuthRequest, res: Response): 
             rejectedRequest: rejectedRequest.rows[0],
         });
     } catch (error) {
-        errorHandler(res, 'Error to reject invite request in session', error);
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        throw error;
     }
 };
 
@@ -631,18 +677,18 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
         }
 
         const sql = `
-            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.created_at, s.max_players, COUNT(sm.id) AS current_players
+            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.created_at, s.max_players, COUNT(sm.id) AS current_players, si.id
             FROM session_invitations si
             INNER JOIN users u
-            ON si.sender_id = u.id
+                ON si.sender_id = u.id
             INNER JOIN sessions s
-            ON si.session_id = s.id
+                ON si.session_id = s.id
             INNER JOIN games g
-            ON s.game_id = g.id
-            INNER JOIN session_members sm
-            ON s.id = sm.session_id
-            WHERE si.receiver_id = $1
-            GROUP BY si.id
+                ON s.game_id = g.id
+            LEFT JOIN session_members sm
+                ON s.id = sm.session_id
+            WHERE si.receiver_id = $1 AND si.status = 'pending'
+            GROUP BY si.id, u.name, g.name, s.title, s.max_players
         `;
 
         const userInvitations = await query(sql, [userId]);
@@ -651,6 +697,6 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
             userInvitations: userInvitations.rows,
         });
     } catch (error) {
-        errorHandler(res, 'Error to get sessions invitations', error);
+        throw error;
     }
 };

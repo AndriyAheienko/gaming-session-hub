@@ -2,9 +2,8 @@ import type { Request, Response } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import z from 'zod';
 
-import { errorHandler, errorZod } from '../utils/errorHandler.js';
+import { errorZod } from '../utils/errorZod.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { query } from '../config/bd.js';
 import { env } from '../config/env.js';
@@ -49,7 +48,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        errorHandler(res, 'Error during user registration', error);
+        throw error;
     }
 };
 
@@ -86,7 +85,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        errorHandler(res, 'Error during user login attempt', error);
+        throw error;
     }
 };
 
@@ -112,6 +111,6 @@ export const getMyInfo = async (req: AuthRequest, res: Response): Promise<void> 
             user: user.rows[0],
         });
     } catch (error) {
-        errorHandler(res, 'Error retrieving user information', error);
+        throw error;
     }
 };
