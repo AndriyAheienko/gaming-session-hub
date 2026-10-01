@@ -11,7 +11,7 @@ export const initDB = async () => {
             rating_sum NUMERIC(5, 1) NOT NULL DEFAULT 0,
             rating_count INTEGER NOT NULL DEFAULT 0,
             avatar_url TEXT,
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
             CONSTRAINT unique_user_email UNIQUE (email)
         );
@@ -33,13 +33,13 @@ export const initDB = async () => {
             title VARCHAR(200) NOT NULL,
             game_id INTEGER NOT NULL REFERENCES games(id),
             owner_id INTEGER NOT NULL REFERENCES users(id),
-            status VARCHAR(50) NOT NULL DEFAULT 'waiting',
+            status VARCHAR(50) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed', 'cancelled')),
             max_players INTEGER NOT NULL CHECK (max_players BETWEEN 1 AND 100),
             starts_at TIMESTAMPTZ NOT NULL,
-            language VARCHAR(50) NOT NULL DEFAULT 'eng',
+            language VARCHAR(50) NOT NULL DEFAULT 'eng' CHECK (language IN ('eng', 'ua')),
             mic_required BOOLEAN NOT NULL DEFAULT FALSE,
             description TEXT,
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         -- session_members
@@ -47,8 +47,8 @@ export const initDB = async () => {
             id SERIAL PRIMARY KEY,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            role VARCHAR(50) NOT NULL DEFAULT 'member',
-            joined_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            role VARCHAR(50) NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+            joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT unique_session_member UNIQUE (session_id, user_id)
         );
 
@@ -58,7 +58,7 @@ export const initDB = async () => {
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             sender_id INTEGER NOT NULL REFERENCES users(id),
             text TEXT NOT NULL,
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         -- friendships
@@ -66,16 +66,17 @@ export const initDB = async () => {
             id SERIAL PRIMARY KEY,
             sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'deleted')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         -- INDEX friendships
-        CREATE UNIQUE INDEX unique_friendships_between_users
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_friendships_between_users
         ON friendships (
             LEAST(sender_id, receiver_id),
             GREATEST(sender_id, receiver_id)
         )
+        WHERE status = 'pending';
 
         -- session_invitations
         CREATE TABLE IF NOT EXISTS session_invitations (
@@ -83,12 +84,12 @@ export const initDB = async () => {
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         -- INDEX session_invitations
-        CREATE UNIQUE INDEX unique_pending_session_invitation
+        CREATE UNIQUE INDEX IF NOT EXISTS unique_pending_session_invitation
         ON session_invitations (
             session_id,
             sender_id,
@@ -105,7 +106,7 @@ export const initDB = async () => {
             rating INTEGER NOT NULL,
             CHECK (rating BETWEEN 1 AND 5),
             CHECK (rater_id <> target_id),
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
             CONSTRAINT unique_rating_per_session UNIQUE (session_id, rater_id, target_id)
         );
@@ -116,5 +117,6 @@ export const initDB = async () => {
         console.log('The databases have been successfully created and verified');
     } catch (error) {
         console.error('Error initializing the database:', error);
+        throw error;
     }
 };

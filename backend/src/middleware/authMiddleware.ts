@@ -2,7 +2,7 @@ import type { Response, NextFunction } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import { isValidPayload } from '../utils/isValidPayload.js';
+import { jwtPayloadSchema } from '../schema/auth.schema.js';
 
 export const protect = (req: AuthRequest, res: Response, next: NextFunction): void => {
     const authorization = req.headers.authorization;
@@ -26,7 +26,9 @@ export const protect = (req: AuthRequest, res: Response, next: NextFunction): vo
     try {
         const decoded = jwt.verify(token, env.JWT_SECRET);
 
-        if (!isValidPayload(decoded)) {
+        const payload = jwtPayloadSchema.safeParse(decoded);
+
+        if (!payload.success) {
             res.status(401).json({
                 message: 'Token payload is invalid',
             });
@@ -34,7 +36,7 @@ export const protect = (req: AuthRequest, res: Response, next: NextFunction): vo
         }
 
         req.user = {
-            userId: decoded.userId,
+            userId: payload.data.userId,
         };
 
         next();

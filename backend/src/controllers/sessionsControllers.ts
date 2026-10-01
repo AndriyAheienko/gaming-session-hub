@@ -338,62 +338,62 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
 export const leaveSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
 
-    try {
-        if (!userId) {
-            res.status(401).json({
-                message: 'The user does not have access to perform this operation',
-            });
-            return;
-        }
+    if (!userId) {
+        res.status(401).json({
+            message: 'The user does not have access to perform this operation',
+        });
+        return;
+    }
 
-        const data = sessionIdSchema.parse(req.params);
+    const data = sessionIdSchema.parse(req.params);
 
-        const sqlExist = `
-            SELECT role
-            FROM session_members 
-            WHERE session_id = $1 AND user_id = $2
-        `;
+    const sqlExist = `
+        SELECT role
+        FROM session_members 
+        WHERE session_id = $1 AND user_id = $2
+    `;
 
-        const userExist = await query(sqlExist, [data.sessionId, userId]);
+    const userExist = await query(sqlExist, [data.sessionId, userId]);
 
-        if (userExist.rowCount === 0) {
-            res.status(409).json({ message: 'The user is not a participant in the session' });
-            return;
-        }
+    if (userExist.rowCount === 0) {
+        res.status(409).json({ message: 'The user is not a participant in the session' });
+        return;
+    }
 
-        if (userExist.rows[0].role !== 'owner') {
-            const deleteMember = await query(
-                'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
-                [data.sessionId, userId],
-            );
+    if (userExist.rows[0].role !== 'owner') {
+        const deleteMember = await query(
+            'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
+            [data.sessionId, userId],
+        );
 
-            if (deleteMember.rowCount === 0) {
-                res.status(404).json({ message: 'User not found in this session' });
-                return;
-            }
-
-            res.status(200).json({
-                message: 'User leave this session successfully',
-            });
-
-            return;
-        }
-
-        const deleteSession = await query('DELETE FROM sessions WHERE id = $1 AND owner_id = $2', [
-            data.sessionId,
-            userId,
-        ]);
-
-        if (deleteSession.rowCount === 0) {
+        if (deleteMember.rowCount === 0) {
             res.status(404).json({ message: 'User not found in this session' });
             return;
         }
 
-        res.status(200).json({ message: 'User leave and deletion session successfully' });
-    } catch (error) {
-        throw error;
+        res.status(200).json({
+            message: 'User leave this session successfully',
+        });
+
+        return;
     }
-};
+
+    const cancelledSession = await query(
+        `
+            UPDATE sessions SET status = 'cancelled'
+            WHERE id = $1 AND owner_id = $2 AND status IN ('waiting', 'active')
+            RETURNING 
+        `,
+        [data.sessionId, userId],
+    );
+
+    if (cancelledSession.rowCount === 0) {
+        res.status(404).json({ message: 'Failed to cancelled session' });
+        return;
+    }
+
+    res.status(200).json({ message: 'User leave and deletion session successfully' });
+}; // Потрібно закінчити
 
 export const sendSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const senderId = req.user?.userId;

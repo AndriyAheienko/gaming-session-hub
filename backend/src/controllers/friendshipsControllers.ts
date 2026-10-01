@@ -32,7 +32,14 @@ export const sendFriendRequest = async (req: AuthRequest, res: Response): Promis
         }
 
         const friendshipExist = await query(
-            'SELECT id FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (receiver_id = $1 AND sender_id = $2)',
+            `
+            SELECT id FROM friendships
+            WHERE (
+                (sender_id = $1 AND receiver_id = $2)
+                OR
+                (receiver_id = $1 AND sender_id = $2)
+            )
+            AND status IN ('pending', 'accepted')`,
             [senderId, data.receiverId],
         );
 
@@ -88,7 +95,7 @@ export const acceptFriendRequest = async (req: AuthRequest, res: Response): Prom
 
         const acceptRequest = await query(sql, [data.friendshipId, userId]);
 
-        if (acceptRequest.rows.length === 0) {
+        if (acceptRequest.rowCount === 0) {
             res.status(400).json({ message: 'Failed to accept the friend request' });
             return;
         }
@@ -146,6 +153,33 @@ export const rejectFriendRequest = async (req: AuthRequest, res: Response): Prom
 export const getUserFriends = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
 
+    if (!userId) {
+        res.status(401).json({
+            message: 'The user does not have access to perform this operation',
+        });
+        return;
+    }
+
+    const friends = await query(
+        `
+        SELECT u.id, u.name, u.rating_sum, u.avatar_url
+        FROM friendships f
+        INNER JOIN users u
+            ON (f.sender_id = $1 AND u.id = f.receiver_id)
+            OR (f.receiver_id = $1 AND u.id = f.sender_id)
+        WHERE f.status = 'accepted'
+        `,
+        [userId],
+    );
+
+    res.status(200).json({
+        friends: friends.rows,
+    });
+};
+
+export const deleteUserFriend = async (req: AuthRequest, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
+
     try {
         if (!userId) {
             res.status(401).json({
@@ -154,22 +188,31 @@ export const getUserFriends = async (req: AuthRequest, res: Response): Promise<v
             return;
         }
 
-        const friends = await query(
+        const data = friendshipSchema.parse(req.params);
+
+        const deleteFriend = await query(
             `
-            SELECT u.id, u.name, u.rating_sum, u.avatar_url
-            FROM friendships f
-            INNER JOIN users u
-                ON (f.sender_id = $1 AND u.id = f.receiver_id)
-                OR (f.receiver_id = $1 AND u.id = f.sender_id)
-            WHERE f.status = 'accepted'
+                UPDATE friendships SET status = 'deleted'
+                WHERE id = $1 AND status = 'accepted' AND (sender_id = $2 OR receiver_id = $2)
+                RETURNING id, sender_id, receiver_id, status, created_at
             `,
-            [userId],
+            [data.friendshipId, userId],
         );
 
+        if (deleteFriend.rowCount === 0) {
+            res.status(400).json({ message: 'Failed to deleted the friend' });
+            return;
+        }
+
         res.status(200).json({
-            friends: friends.rows,
+            message: 'The user has been successfully removed from your friends list',
+            deleteFriend: deleteFriend.rows[0],
         });
     } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
         throw error;
     }
 };
