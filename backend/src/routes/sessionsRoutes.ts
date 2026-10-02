@@ -10,6 +10,9 @@ import {
     acceptSessionInvitation,
     rejectSessionInvitation,
     getSessionsInvitations,
+    startSession,
+    completeSession,
+    cancelSession,
 } from '../controllers/sessionsControllers.js';
 import { rateSessionMember } from '../controllers/ratingsControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -28,6 +31,10 @@ router.get('/:id/members', getSessionMembers);
 
 router.post('/:sessionId/invitations/:receiverId', protect, sendSessionInvitation);
 router.post('/:sessionId/ratings', protect, rateSessionMember);
+
+router.patch('/:sessionId/start', protect, startSession);
+router.patch('/:sessionId/complete', protect, completeSession);
+router.patch('/:sessionId/cancel', protect, cancelSession);
 
 router.post('/:id/join', protect, joinSession);
 router.delete('/:id/leave', protect, leaveSession);

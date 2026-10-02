@@ -91,7 +91,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
                 ON s.owner_id = u.id
             INNER JOIN session_members sm
                 ON s.id = sm.session_id
-            WHERE 1=1
+            WHERE s.status = 'waiting'
         `;
         const values: (string | number)[] = [];
         let paramIndex = 1;
@@ -177,7 +177,7 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
         const data = sessionIdSchema.parse(req.params);
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             FROM sessions s
             INNER JOIN games g
                 ON s.game_id = g.id
@@ -212,6 +212,13 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
     try {
         const data = sessionIdSchema.parse(req.params);
 
+        const session = await query('SELECT id FROM sessions WHERE id = $1', [data.sessionId]);
+
+        if (session.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found' });
+            return;
+        }
+
         const sqlMembers = `
             SELECT sm.role, sm.joined_at, u.id, u.name, u.avatar_url, u.rating_sum, u.rating_count
             FROM session_members sm
@@ -221,11 +228,6 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
         `;
 
         const sessionMembers = await query(sqlMembers, [data.sessionId]);
-
-        if (sessionMembers.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found' });
-            return;
-        }
 
         res.status(200).json({
             members: sessionMembers.rows,
@@ -258,13 +260,16 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         await client.query('BEGIN');
 
         const session = await client.query(
-            'SELECT s.id, s.max_players FROM sessions s WHERE s.id = $1 FOR UPDATE',
+            `SELECT id, max_players, status 
+            FROM sessions
+            WHERE id = $1 AND status = 'waiting'
+            FOR UPDATE`,
             [data.sessionId],
         );
 
         if (session.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found' });
             await client.query('ROLLBACK');
+            res.status(404).json({ message: 'Session not found' });
             return;
         }
 
@@ -338,62 +343,64 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
 export const leaveSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const userId = req.user?.userId;
 
-    if (!userId) {
-        res.status(401).json({
-            message: 'The user does not have access to perform this operation',
-        });
-        return;
-    }
+    try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
 
-    const data = sessionIdSchema.parse(req.params);
+        const data = sessionIdSchema.parse(req.params);
 
-    const sqlExist = `
-        SELECT role
-        FROM session_members 
-        WHERE session_id = $1 AND user_id = $2
-    `;
+        const session = await query('SELECT id FROM sessions WHERE id = $1', [data.sessionId]);
 
-    const userExist = await query(sqlExist, [data.sessionId, userId]);
+        if (session.rowCount === 0) {
+            res.status(404).json({ message: 'Session not found' });
+            return;
+        }
 
-    if (userExist.rowCount === 0) {
-        res.status(409).json({ message: 'The user is not a participant in the session' });
-        return;
-    }
+        const sqlExist = `
+            SELECT id, role
+            FROM session_members 
+            WHERE session_id = $1 AND user_id = $2
+        `;
 
-    if (userExist.rows[0].role !== 'owner') {
-        const deleteMember = await query(
+        const userExist = await query(sqlExist, [data.sessionId, userId]);
+
+        if (userExist.rowCount === 0) {
+            res.status(409).json({ message: 'The user is not a participant in the session' });
+            return;
+        }
+
+        if (userExist.rows[0].role === 'owner') {
+            res.status(409).json({
+                message: 'The session owner cannot leave the session',
+            });
+            return;
+        }
+
+        const exitMember = await query(
             'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
             [data.sessionId, userId],
         );
 
-        if (deleteMember.rowCount === 0) {
+        if (exitMember.rowCount === 0) {
             res.status(404).json({ message: 'User not found in this session' });
             return;
         }
 
         res.status(200).json({
-            message: 'User leave this session successfully',
+            message: 'The user has successfully left the session',
         });
+    } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
 
-        return;
+        throw error;
     }
-
-    const cancelledSession = await query(
-        `
-            UPDATE sessions SET status = 'cancelled'
-            WHERE id = $1 AND owner_id = $2 AND status IN ('waiting', 'active')
-            RETURNING 
-        `,
-        [data.sessionId, userId],
-    );
-
-    if (cancelledSession.rowCount === 0) {
-        res.status(404).json({ message: 'Failed to cancelled session' });
-        return;
-    }
-
-    res.status(200).json({ message: 'User leave and deletion session successfully' });
-}; // Потрібно закінчити
+};
 
 export const sendSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
     const senderId = req.user?.userId;
@@ -411,7 +418,7 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
         const sqlSessionExist = `
             SELECT owner_id
             FROM sessions
-            WHERE id = $1 AND owner_id = $2
+            WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
         `;
 
         const sessionOwner = await query(sqlSessionExist, [data.sessionId, senderId]);
@@ -506,9 +513,9 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
 
         const invitation = await client.query(
             `
-                SELECT id, session_id, sender_id, receiver_id, status
+                SELECT id, session_id, sender_id, receiver_id
                 FROM session_invitations
-                WHERE id = $1 AND receiver_id = $2
+                WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
                 FOR UPDATE
             `,
             [data.invitationId, userId],
@@ -523,22 +530,13 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
-        if (invitation.rows[0].status !== 'pending') {
-            await client.query('ROLLBACK');
-
-            res.status(409).json({
-                message: 'The invitation has already been processed',
-            });
-            return;
-        }
-
         const sessionId = invitation.rows[0].session_id;
 
         const session = await client.query(
             `
                 SELECT id, max_players
                 FROM sessions
-                WHERE id = $1
+                WHERE id = $1 AND status = 'waiting'
                 FOR UPDATE
             `,
             [sessionId],
@@ -687,7 +685,7 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
                 ON s.game_id = g.id
             LEFT JOIN session_members sm
                 ON s.id = sm.session_id
-            WHERE si.receiver_id = $1 AND si.status = 'pending'
+            WHERE si.receiver_id = $1 AND si.status = 'pending' AND s.status = 'waiting'
             GROUP BY si.id, u.name, g.name, s.title, s.max_players
         `;
 
@@ -698,5 +696,151 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
         });
     } catch (error) {
         throw error;
+    }
+};
+
+export const startSession = async (req: AuthRequest, res: Response): Promise<void> => {
+    const ownerId = req.user?.userId;
+
+    try {
+        if (!ownerId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = sessionIdSchema.parse(req.params);
+
+        const startSession = await query(
+            `
+                UPDATE sessions SET status = 'active'
+                WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
+                RETURNING id, status
+            `,
+            [data.sessionId, ownerId],
+        );
+
+        if (startSession.rowCount === 0) {
+            res.status(409).json({
+                message: 'Unable to start this session',
+            });
+            return;
+        }
+
+        res.status(200).json({
+            start: startSession.rows[0],
+        });
+    } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        throw error;
+    }
+};
+
+export const completeSession = async (req: AuthRequest, res: Response): Promise<void> => {
+    const ownerId = req.user?.userId;
+
+    try {
+        if (!ownerId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = sessionIdSchema.parse(req.params);
+
+        const completeSession = await query(
+            `
+                UPDATE sessions SET status = 'completed'
+                WHERE id = $1 AND owner_id = $2 AND status = 'active'
+                RETURNING id, status
+            `,
+            [data.sessionId, ownerId],
+        );
+
+        if (completeSession.rowCount === 0) {
+            res.status(409).json({
+                message: 'Unable to finish this session',
+            });
+            return;
+        }
+
+        res.status(200).json({
+            complete: completeSession.rows[0],
+        });
+    } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        throw error;
+    }
+};
+
+export const cancelSession = async (req: AuthRequest, res: Response): Promise<void> => {
+    const ownerId = req.user?.userId;
+
+    let client = null;
+
+    try {
+        if (!ownerId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const data = sessionIdSchema.parse(req.params);
+
+        client = await pool.connect();
+
+        await client.query('BEGIN');
+
+        const cancelSession = await client.query(
+            `
+                UPDATE sessions SET status = 'cancelled'
+                WHERE id = $1 AND owner_id = $2 AND status IN ('waiting', 'active')
+                RETURNING id, status
+            `,
+            [data.sessionId, ownerId],
+        );
+
+        if (cancelSession.rowCount === 0) {
+            await client.query('ROLLBACK');
+            res.status(409).json({
+                message: 'Failed to cancel the current session',
+            });
+            return;
+        }
+
+        await client.query(
+            `
+            DELETE FROM session_members 
+            WHERE session_id = $1
+            RETURNING id
+        `,
+            [data.sessionId],
+        );
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+            message: 'Session successfully cancelled',
+            cancel: cancelSession.rows[0],
+        });
+    } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        if (client) await client.query('ROLLBACK');
+
+        throw error;
+    } finally {
+        if (client) client.release();
     }
 };
