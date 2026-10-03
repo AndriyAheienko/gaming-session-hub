@@ -8,6 +8,8 @@ import { closePool } from './config/bd.js';
 import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
 import friendsRoutes from './routes/friendsRoutes.js';
+import gamesRoutes from './routes/gamesRoutes.js';
+
 import { errorHandler } from './middleware/errorHandler.js';
 
 const port = env.PORT;
@@ -29,6 +31,7 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/auth', authRoutes);
 app.use('/sessions', sessionsRoutes);
 app.use('/friends', friendsRoutes);
+app.use('/games', gamesRoutes);
 
 app.use((_req: Request, res: Response) => {
     res.status(404).json({

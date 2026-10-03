@@ -24,7 +24,7 @@ export const initDB = async () => {
             slug VARCHAR(100),
             background_image TEXT,
             rating NUMERIC(3, 2),
-            genre VARCHAR(100)
+            genres VARCHAR(100)
         );
 
         -- sessions
@@ -100,7 +100,7 @@ export const initDB = async () => {
         -- ratings
         CREATE TABLE IF NOT EXISTS ratings (
             id SERIAL PRIMARY KEY,
-            rater_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            rater_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             target_id INTEGER NOT NULL REFERENCES users(id),
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             rating INTEGER NOT NULL,

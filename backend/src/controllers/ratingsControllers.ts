@@ -60,7 +60,7 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
 
         if (targetExist.rowCount === 0) {
             res.status(404).json({
-                message: 'User are not a participant in the player evaluation session.',
+                message: 'User is not a participant in the player evaluation session.',
             });
             return;
         }
@@ -99,6 +99,12 @@ export const rateSessionMember = async (req: AuthRequest, res: Response): Promis
         `;
 
         const user = await client.query(sqlUser, [body.rating, body.targetId]);
+
+        if (user.rowCount === 0) {
+            await client.query('ROLLBACK');
+            res.status(409).json({ message: 'Target user not found' });
+            return;
+        }
 
         await client.query('COMMIT');
 

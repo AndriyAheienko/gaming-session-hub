@@ -7,6 +7,7 @@ const envSchema = z.object({
     PORT: z.coerce.number().int().positive(),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     CORS_ORIGIN: z.string().trim().min(1),
+    RAWG_API_KEY: z.string().trim().min(1),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -17,4 +18,5 @@ export const env = {
     PORT: parsedEnv.PORT,
     NODE_ENV: parsedEnv.NODE_ENV,
     CORS_ORIGIN: parsedEnv.CORS_ORIGIN,
+    RAWG_API_KEY: parsedEnv.RAWG_API_KEY,
 };
