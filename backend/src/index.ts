@@ -1,9 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import type { Request, Response } from 'express';
+import { createServer } from 'http';
 
 import { env } from './config/env.js';
 import { closePool } from './config/bd.js';
+import { chatHandler } from './sockets/chatHandler.js';
 
 import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
@@ -15,11 +17,13 @@ import { errorHandler } from './middleware/errorHandler.js';
 const port = env.PORT;
 
 const app = express();
+
 app.use(
     cors({
         origin: env.CORS_ORIGIN,
     }),
 );
+
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req: Request, res: Response) => {
@@ -41,7 +45,11 @@ app.use((_req: Request, res: Response) => {
 
 app.use(errorHandler);
 
-const server = app.listen(port, () => {
+const httpServer = createServer(app);
+
+chatHandler(httpServer);
+
+const server = httpServer.listen(port, () => {
     console.log(`Server running on port ${env.PORT}`);
 });
 

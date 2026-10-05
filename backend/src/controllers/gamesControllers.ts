@@ -1,20 +1,10 @@
-import type { Response } from 'express';
-import type { AuthRequest } from '../types/express.types.js';
+import type { Request, Response } from 'express';
 import { getGames } from '../services/rawgService.js';
 import { querySchema } from '../schema/games.schema.js';
 import { errorZod } from '../utils/errorZod.js';
 
-export const searchGames = async (req: AuthRequest, res: Response): Promise<void> => {
-    const ownerId = req.user?.userId;
-
+export const searchGames = async (req: Request, res: Response): Promise<void> => {
     try {
-        if (!ownerId) {
-            res.status(401).json({
-                message: 'The user does not have access to perform this operation',
-            });
-            return;
-        }
-
         const query = querySchema.parse(req.query);
 
         const games = await getGames(query.searchQuery, query.pageSize);

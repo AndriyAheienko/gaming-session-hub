@@ -13,6 +13,7 @@ import {
     startSession,
     completeSession,
     cancelSession,
+    getSessionMessages,
 } from '../controllers/sessionsControllers.js';
 import { rateSessionMember } from '../controllers/ratingsControllers.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -27,7 +28,8 @@ router.get('/invitations', protect, getSessionsInvitations);
 router.patch('/invitations/:invitationId/accept', protect, acceptSessionInvitation);
 router.patch('/invitations/:invitationId/reject', protect, rejectSessionInvitation);
 
-router.get('/:id/members', getSessionMembers);
+router.get('/:sessionId/members', getSessionMembers);
+router.get('/:sessionId/messages', getSessionMessages);
 
 router.post('/:sessionId/invitations/:receiverId', protect, sendSessionInvitation);
 router.post('/:sessionId/ratings', protect, rateSessionMember);
@@ -36,9 +38,9 @@ router.patch('/:sessionId/start', protect, startSession);
 router.patch('/:sessionId/complete', protect, completeSession);
 router.patch('/:sessionId/cancel', protect, cancelSession);
 
-router.post('/:id/join', protect, joinSession);
-router.delete('/:id/leave', protect, leaveSession);
+router.post('/:sessionId/join', protect, joinSession);
+router.delete('/:sessionId/leave', protect, leaveSession);
 
-router.get('/:id', getSessionById);
+router.get('/:sessionId', getSessionById);
 
 export default router;

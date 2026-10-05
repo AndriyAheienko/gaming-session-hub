@@ -31,6 +31,31 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         await client.query('BEGIN');
 
+        const gameSql = `
+            INSERT INTO games(rawg_id, name, slug, background_image, rating, genres)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (rawg_id)
+            DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+        `;
+
+        const game = await client.query(gameSql, [
+            body.game.rawg_id,
+            body.game.name,
+            body.game.slug,
+            body.game.background_image,
+            body.game.rating,
+            body.game.genres.map(genre => genre.name).join(', '),
+        ]);
+
+        if (game.rowCount === 0) {
+            await client.query('ROLLBACK');
+            res.status(404).json({
+                message: 'Unable to find the selected game',
+            });
+            return;
+        }
+
         const sql = `
             INSERT INTO sessions (title, game_id, max_players, starts_at, language, mic_required, description, owner_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -39,7 +64,7 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         const session = await client.query(sql, [
             body.title,
-            body.gameId,
+            game.rows[0].id,
             body.maxPlayers,
             body.startsAt,
             body.language,
@@ -842,5 +867,32 @@ export const cancelSession = async (req: AuthRequest, res: Response): Promise<vo
         throw error;
     } finally {
         if (client) client.release();
+    }
+};
+
+export const getSessionMessages = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const data = sessionIdSchema.parse(req.params);
+
+        const messageSql = `
+            SELECT m.id, m.text, m.created_at, u.name, u.avatar_url
+            FROM messages m
+            INNER JOIN users u
+            ON m.sender_id = u.id
+            WHERE m.session_id = $1
+            ORDER BY m.created_at ASC
+        `;
+
+        const messages = await query(messageSql, [data.sessionId]);
+
+        res.status(200).json({
+            messages: messages.rows,
+        });
+    } catch (error) {
+        if (errorZod(res, error)) {
+            return;
+        }
+
+        throw error;
     }
 };
