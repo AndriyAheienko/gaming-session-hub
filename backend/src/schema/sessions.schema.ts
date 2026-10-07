@@ -9,20 +9,7 @@ export const bodySchema = z.object({
     language: z.enum(['eng', 'ua']),
     micRequired: z.boolean(),
     description: z.string().optional(),
-    game: z.object({
-        rawg_id: z.number().int().positive().min(1),
-        name: z.string().trim().min(1),
-        slug: z.string().trim().min(1),
-        background_image: z.string().pipe(z.url()).nullable(),
-        rating: z.number().nonnegative(),
-        genres: z.array(
-            z.object({
-                id: z.number().int().positive().min(1),
-                name: z.string().trim().min(1),
-                slug: z.string().trim().min(1),
-            }),
-        ),
-    }),
+    rawg_id: z.number().int().positive(),
 });
 
 export const querySchema = z.object({

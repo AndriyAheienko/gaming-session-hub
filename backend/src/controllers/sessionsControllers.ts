@@ -11,6 +11,7 @@ import {
     sendInvitationParamsSchema,
     invitationIdSchema,
 } from '../schema/sessions.schema.js';
+import { getGameById } from '../services/rawgService.js';
 
 export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
     const ownerId = req.user?.userId;
@@ -31,29 +32,36 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         await client.query('BEGIN');
 
-        const gameSql = `
-            INSERT INTO games(rawg_id, name, slug, background_image, rating, genres)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (rawg_id)
-            DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
-        `;
+        let gameId: number;
 
-        const game = await client.query(gameSql, [
-            body.game.rawg_id,
-            body.game.name,
-            body.game.slug,
-            body.game.background_image,
-            body.game.rating,
-            body.game.genres.map(genre => genre.name).join(', '),
+        const existingGame = await client.query('SELECT id FROM games WHERE rawg_id = $1', [
+            body.rawg_id,
         ]);
 
-        if (game.rowCount === 0) {
-            await client.query('ROLLBACK');
-            res.status(404).json({
-                message: 'Unable to find the selected game',
-            });
-            return;
+        if ((existingGame.rowCount ?? 0) > 0) {
+            gameId = existingGame.rows[0].id;
+        } else {
+            const rawgGame = await getGameById(body.rawg_id);
+
+            const newGame = await client.query(
+                `
+                    INSERT INTO games (rawg_id, name, slug, background_image, rating, genres)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (rawg_id)
+                    DO UPDATE SET rawg_id = EXCLUDED.rawg_id
+                    RETURNING id
+                `,
+                [
+                    rawgGame.rawg_id,
+                    rawgGame.name,
+                    rawgGame.slug,
+                    rawgGame.background_image,
+                    rawgGame.rating,
+                    rawgGame.genres,
+                ],
+            );
+
+            gameId = newGame.rows[0].id;
         }
 
         const sql = `
@@ -64,7 +72,7 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         const session = await client.query(sql, [
             body.title,
-            game.rows[0].id,
+            gameId,
             body.maxPlayers,
             body.startsAt,
             body.language,
