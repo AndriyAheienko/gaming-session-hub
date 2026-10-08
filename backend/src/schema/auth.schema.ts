@@ -14,3 +14,8 @@ export const loginSchema = z.object({
 export const jwtPayloadSchema = z.object({
     userId: z.number().int().positive(),
 });
+
+export const authSchema = z
+    .string({ message: 'Token is missing or invalid' })
+    .startsWith('Bearer ', { message: 'Token must start with Bearer' })
+    .transform(val => val.split(' ')[1]);

@@ -1,9 +1,11 @@
-import { Server } from 'socket.io';
+import { Server, type Socket } from 'socket.io';
 import { env } from '../config/env.js';
 import type { Server as HttpServer } from 'http';
 import { query } from '../config/bd.js';
 import jwt from 'jsonwebtoken';
-import { jwtPayloadSchema } from '../schema/auth.schema.js';
+import { jwtPayloadSchema, authSchema } from '../schema/auth.schema.js';
+import { joinSchema, socketSchema, sendSchema } from '../schema/chat.schema.js';
+import { errorSocket } from '../utils/errorSocket.js';
 
 export const chatHandler = (httpServer: HttpServer): void => {
     const io = new Server(httpServer, {
@@ -13,104 +15,105 @@ export const chatHandler = (httpServer: HttpServer): void => {
         },
     });
 
-    io.use((socket, next) => {
-        const authorization = socket.handshake.auth.token;
-
-        if (
-            !authorization ||
-            typeof authorization !== 'string' ||
-            !authorization.startsWith('Bearer ')
-        ) {
-            return next(new Error('Token is missing or invalid'));
-        }
-
-        const token = authorization.split(' ')[1];
-
-        if (!token) {
-            return next(new Error('Authentication error'));
-        }
-
+    io.use((socket: Socket, next) => {
         try {
+            const token = authSchema.parse(socket.handshake.auth.token);
+
+            if (!token) {
+                return next(new Error('Authentication error'));
+            }
+
             const decoded = jwt.verify(token, env.JWT_SECRET);
 
             const payload = jwtPayloadSchema.parse(decoded);
-
-            if (!payload) {
-                return next(new Error('Token payload is invalid'));
-            }
 
             socket.data.userId = payload.userId;
 
             next();
         } catch (error) {
-            console.error('Token verification failed:', error);
-
-            return next(new Error('Token is invalid or expired'));
+            console.error('Socket authentication failed:', error);
+            next(new Error('Authentication failed: invalid or missing token'));
         }
     });
 
-    io.on('connection', socket => {
+    io.on('connection', (socket: Socket) => {
         console.log('New user connection: ', socket.id);
 
         socket.on('join_session_chat', async (data, callback) => {
-            const roomName = `session_${data.sessionId}`;
+            try {
+                const body = joinSchema.parse(data);
+                const socketBody = socketSchema.parse(socket.data);
 
-            const sql = `
-                SELECT id
-                FROM session_members
-                WHERE session_id = $1 AND user_id = $2
-            `;
+                const roomName = `session_${body.sessionId}`;
 
-            const userExist = await query(sql, [data.sessionId, socket.data.userId]);
+                const sql = `
+                    SELECT id
+                    FROM session_members
+                    WHERE session_id = $1 AND user_id = $2
+                `;
 
-            if (userExist.rowCount === 0) {
-                callback({
-                    success: false,
-                    message: 'The user does not belong to the session',
-                });
-                return;
+                const userExist = await query(sql, [body.sessionId, socketBody.userId]);
+
+                if (userExist.rowCount === 0) {
+                    if (typeof callback === 'function') {
+                        callback({
+                            success: false,
+                            message: 'The user does not belong to the session',
+                        });
+                    }
+                    return;
+                }
+
+                socket.join(roomName);
+
+                console.log(
+                    `User id_${socketBody.userId} successfully entered the room ${body.sessionId}`,
+                );
+
+                if (typeof callback === 'function') {
+                    callback({ success: true });
+                }
+            } catch (error) {
+                errorSocket(error, callback);
             }
-
-            socket.join(roomName);
-
-            console.log(
-                `User id_${socket.data.userId} successfully entered the room ${data.sessionId}`,
-            );
-
-            callback({ success: true });
         });
 
         socket.on('send_message', async (data, callback) => {
-            const roomName = `session_${data.sessionId}`;
-
-            const sql = `
-                SELECT id
-                FROM session_members
-                WHERE session_id = $1 AND user_id = $2
-            `;
-
-            const userExist = await query(sql, [data.sessionId, socket.data.userId]);
-
-            if (userExist.rowCount === 0) {
-                callback({
-                    success: false,
-                    message: 'The user does not belong to the session',
-                });
-                return;
-            }
-
             try {
+                const body = sendSchema.parse(data);
+                const socketBody = socketSchema.parse(socket.data);
+
+                const roomName = `session_${body.sessionId}`;
+
+                const sql = `
+                    SELECT id
+                    FROM session_members
+                    WHERE session_id = $1 AND user_id = $2
+                `;
+
+                const userExist = await query(sql, [body.sessionId, socketBody.userId]);
+
+                if (userExist.rowCount === 0) {
+                    if (typeof callback === 'function') {
+                        callback({
+                            success: false,
+                            message: 'The user does not belong to the session',
+                        });
+                    }
+                    return;
+                }
+
                 const newMessage = await query(
                     `
                     INSERT INTO messages (session_id, sender_id, text)
                     VALUES ($1, $2, $3)
                     RETURNING id, text, created_at
                 `,
-                    [data.sessionId, socket.data.userId, data.text],
+                    [body.sessionId, socketBody.userId, body.text],
                 );
 
                 const userInfo = await query('SELECT name, avatar_url FROM users WHERE id = $1', [
-                    socket.data.userId,
+                    socketBody.userId,
                 ]);
 
                 const result = {
@@ -123,9 +126,11 @@ export const chatHandler = (httpServer: HttpServer): void => {
 
                 io.to(roomName).emit('receive_message', result);
 
-                callback({ success: true });
+                if (typeof callback === 'function') {
+                    callback({ success: true });
+                }
             } catch (error) {
-                console.error('Error sending message: ', error);
+                errorSocket(error, callback);
             }
         });
 
