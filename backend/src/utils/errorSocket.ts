@@ -1,7 +1,10 @@
 import z from 'zod';
 import type { callbackError } from '../types/socket.types.js';
 
-export const errorSocket = (error: unknown, callback: (data: callbackError) => void) => {
+export const errorSocket = (
+    error: unknown,
+    callback: ((data: callbackError) => void) | undefined,
+) => {
     if (error instanceof z.ZodError) {
         const errors = error.issues.reduce<Record<string, string>>((acc, error) => {
             const [key] = error.path;

@@ -110,6 +110,26 @@ export const initDB = async () => {
 
             CONSTRAINT unique_rating_per_session UNIQUE (session_id, rater_id, target_id)
         );
+
+        --notifications
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type VARCHAR(50) NOT NULL type IN (
+                'friend_request', 
+                'friend_accepted', 
+                'session_invite', 
+                'session_joined', 
+                'session_left', 
+                'session_cancelled',
+                'new_rating'
+            ),
+            session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            friendship_id INTEGER REFERENCES friendships(id) ON DELETE SET NULL,
+            read_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
     `;
 
     try {

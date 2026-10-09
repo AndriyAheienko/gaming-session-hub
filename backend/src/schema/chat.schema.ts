@@ -10,5 +10,5 @@ export const socketSchema = z.object({
 
 export const sendSchema = z.object({
     sessionId: z.coerce.number().int().positive(),
-    text: z.coerce.string().trim().min(1),
+    text: z.string().trim().min(1),
 });

@@ -19,10 +19,6 @@ export const chatHandler = (httpServer: HttpServer): void => {
         try {
             const token = authSchema.parse(socket.handshake.auth.token);
 
-            if (!token) {
-                return next(new Error('Authentication error'));
-            }
-
             const decoded = jwt.verify(token, env.JWT_SECRET);
 
             const payload = jwtPayloadSchema.parse(decoded);
@@ -54,7 +50,7 @@ export const chatHandler = (httpServer: HttpServer): void => {
 
                 const userExist = await query(sql, [body.sessionId, socketBody.userId]);
 
-                if (userExist.rowCount === 0) {
+                if (userExist.rows.length === 0) {
                     if (typeof callback === 'function') {
                         callback({
                             success: false,
@@ -64,7 +60,7 @@ export const chatHandler = (httpServer: HttpServer): void => {
                     return;
                 }
 
-                socket.join(roomName);
+                await socket.join(roomName);
 
                 console.log(
                     `User id_${socketBody.userId} successfully entered the room ${body.sessionId}`,
@@ -83,17 +79,29 @@ export const chatHandler = (httpServer: HttpServer): void => {
                 const body = sendSchema.parse(data);
                 const socketBody = socketSchema.parse(socket.data);
 
-                const roomName = `session_${body.sessionId}`;
-
-                const sql = `
-                    SELECT id
-                    FROM session_members
-                    WHERE session_id = $1 AND user_id = $2
+                const postMessageSql = `
+                    WITH inserted_message AS (
+                        INSERT INTO messages (session_id, sender_id, text)
+                        SELECT $1, $2, $3
+                        WHERE EXISTS (
+                            SELECT 1 FROM session_members
+                            WHERE session_id = $1 AND user_id = $2
+                        )
+                        RETURNING id, sender_id, text, created_at
+                    )
+                    SELECT im.id, im.sender_id, im.text, im.created_at, u.name, u.avatar_url
+                    FROM inserted_message im
+                    INNER JOIN users u
+                    ON im.sender_id = u.id
                 `;
 
-                const userExist = await query(sql, [body.sessionId, socketBody.userId]);
+                const result = await query(postMessageSql, [
+                    body.sessionId,
+                    socketBody.userId,
+                    body.text,
+                ]);
 
-                if (userExist.rowCount === 0) {
+                if (result.rows.length === 0) {
                     if (typeof callback === 'function') {
                         callback({
                             success: false,
@@ -103,28 +111,10 @@ export const chatHandler = (httpServer: HttpServer): void => {
                     return;
                 }
 
-                const newMessage = await query(
-                    `
-                    INSERT INTO messages (session_id, sender_id, text)
-                    VALUES ($1, $2, $3)
-                    RETURNING id, text, created_at
-                `,
-                    [body.sessionId, socketBody.userId, body.text],
-                );
+                const message = result.rows[0];
+                const roomName = `session_${body.sessionId}`;
 
-                const userInfo = await query('SELECT name, avatar_url FROM users WHERE id = $1', [
-                    socketBody.userId,
-                ]);
-
-                const result = {
-                    id: newMessage.rows[0].id,
-                    text: newMessage.rows[0].text,
-                    created_at: newMessage.rows[0].created_at,
-                    name: userInfo.rows[0].name,
-                    avatar_url: userInfo.rows[0].avatar_url,
-                };
-
-                io.to(roomName).emit('receive_message', result);
+                io.to(roomName).emit('receive_message', message);
 
                 if (typeof callback === 'function') {
                     callback({ success: true });
