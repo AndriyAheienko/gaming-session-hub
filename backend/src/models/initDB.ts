@@ -116,7 +116,7 @@ export const initDB = async () => {
             id SERIAL PRIMARY KEY,
             actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            type VARCHAR(50) NOT NULL type IN (
+            type VARCHAR(50) NOT NULL CHECK (type IN (
                 'friend_request', 
                 'friend_accepted', 
                 'session_invite', 
@@ -124,7 +124,7 @@ export const initDB = async () => {
                 'session_left', 
                 'session_cancelled',
                 'new_rating'
-            ),
+            )),
             session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
             friendship_id INTEGER REFERENCES friendships(id) ON DELETE SET NULL,
             read_at TIMESTAMPTZ,
