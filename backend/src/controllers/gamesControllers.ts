@@ -1,9 +1,13 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { getGames } from '../services/rawgService.js';
 import { querySchema } from '../schema/games.schema.js';
 import { errorZod } from '../utils/errorZod.js';
 
-export const searchGames = async (req: Request, res: Response): Promise<void> => {
+export const searchGames = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     try {
         const query = querySchema.parse(req.query);
 
@@ -15,6 +19,6 @@ export const searchGames = async (req: Request, res: Response): Promise<void> =>
             return;
         }
 
-        throw error;
+        next(error);
     }
 };

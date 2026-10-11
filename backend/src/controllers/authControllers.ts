@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import type { AuthRequest } from '../types/express.types.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -9,7 +9,7 @@ import { query } from '../config/bd.js';
 import { env } from '../config/env.js';
 import { registerSchema, loginSchema } from '../schema/auth.schema.js';
 
-export const register = async (req: Request, res: Response): Promise<void> => {
+export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const data = registerSchema.parse(req.body);
 
@@ -48,11 +48,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const login = async (req: Request, res: Response): Promise<void> => {
+export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const data = loginSchema.parse(req.body);
 
@@ -85,7 +85,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 

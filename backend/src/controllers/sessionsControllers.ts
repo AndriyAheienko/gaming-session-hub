@@ -1,4 +1,5 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import type { PoolClient } from 'pg';
 
 import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
@@ -12,11 +13,16 @@ import {
     invitationIdSchema,
 } from '../schema/sessions.schema.js';
 import { getGameById } from '../services/rawgService.js';
+import { errorTransaction } from '../utils/errorTransaction.js';
 
-export const createSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const ownerId = req.user?.userId;
 
-    let client = null;
+    let client: PoolClient | null = null;
 
     try {
         if (!ownerId) {
@@ -28,22 +34,16 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
         const body = bodySchema.parse(req.body);
 
-        client = await pool.connect();
-
-        await client.query('BEGIN');
-
         let gameId: number;
 
-        const existingGame = await client.query('SELECT id FROM games WHERE rawg_id = $1', [
-            body.rawg_id,
-        ]);
+        const existingGame = await query('SELECT id FROM games WHERE rawg_id = $1', [body.rawg_id]);
 
         if ((existingGame.rowCount ?? 0) > 0) {
             gameId = existingGame.rows[0].id;
         } else {
             const rawgGame = await getGameById(body.rawg_id);
 
-            const newGame = await client.query(
+            const newGame = await query(
                 `
                     INSERT INTO games (rawg_id, name, slug, background_image, rating, genres)
                     VALUES ($1, $2, $3, $4, $5, $6)
@@ -63,6 +63,9 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
 
             gameId = newGame.rows[0].id;
         }
+
+        client = await pool.connect();
+        await client.query('BEGIN');
 
         const sql = `
             INSERT INTO sessions (title, game_id, max_players, starts_at, language, mic_required, description, owner_id)
@@ -98,19 +101,23 @@ export const createSession = async (req: AuthRequest, res: Response): Promise<vo
             ownerUser: owner.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
 
-        if (client) await client.query('ROLLBACK');
-
-        throw error;
+        next(error);
     } finally {
         if (client) client.release();
     }
 };
 
-export const getSessions = async (req: Request, res: Response): Promise<void> => {
+export const getSessions = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     try {
         const reqQuery = querySchema.parse(req.query);
 
@@ -183,7 +190,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
         const sql = `
             SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             ${baseQuery}
-            GROUP BY s.id
+            GROUP BY s.id, g.name, u.id, u.name
             ${availableSql}
             ${orderQuery}
             LIMIT $${limitIndex}
@@ -201,11 +208,15 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const getSessionById = async (req: Request, res: Response): Promise<void> => {
+export const getSessionById = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     try {
         const data = sessionIdSchema.parse(req.params);
 
@@ -219,7 +230,7 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             LEFT JOIN session_members sm
                 ON s.id = sm.session_id
             WHERE s.id = $1
-            GROUP BY s.id
+            GROUP BY s.id, g.name, u.id, u.name
         `;
 
         const session = await query(sql, [data.sessionId]);
@@ -237,11 +248,15 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const getSessionMembers = async (req: Request, res: Response): Promise<void> => {
+export const getSessionMembers = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     try {
         const data = sessionIdSchema.parse(req.params);
 
@@ -270,13 +285,17 @@ export const getSessionMembers = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const joinSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const joinSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const memberId = req.user?.userId;
-    let client = null;
+    let client: PoolClient | null = null;
 
     try {
         if (!memberId) {
@@ -289,19 +308,20 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         const data = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
-
         await client.query('BEGIN');
 
         const session = await client.query(
-            `SELECT id, max_players, status 
-            FROM sessions
-            WHERE id = $1 AND status = 'waiting'
-            FOR UPDATE`,
+            `
+                SELECT id, max_players, status
+                FROM sessions
+                WHERE id = $1 AND status = 'waiting'
+                FOR UPDATE
+            `,
             [data.sessionId],
         );
 
         if (session.rowCount === 0) {
-            await client.query('ROLLBACK');
+            await errorTransaction(client);
             res.status(404).json({ message: 'Session not found' });
             return;
         }
@@ -318,8 +338,8 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         const maxPlayers = session.rows[0].max_players;
 
         if (currentPlayersCount >= maxPlayers) {
+            await errorTransaction(client);
             res.status(409).json({ message: 'Sorry, but the session is full of players' });
-            await client.query('ROLLBACK');
             return;
         }
 
@@ -333,8 +353,8 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
         );
 
         if ((memberExist.rowCount ?? 0) > 0) {
+            await errorTransaction(client);
             res.status(409).json({ message: 'The user is already part of this session' });
-            await client.query('ROLLBACK');
             return;
         }
 
@@ -352,11 +372,11 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             session_member: sessionMember.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
-
-        if (client) await client.query('ROLLBACK');
 
         if (
             isPostgresError(error) &&
@@ -367,13 +387,17 @@ export const joinSession = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        throw error;
+        next(error);
     } finally {
         if (client) client.release();
     }
 };
 
-export const leaveSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const leaveSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const userId = req.user?.userId;
 
     try {
@@ -431,11 +455,15 @@ export const leaveSession = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const sendSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+export const sendSessionInvitation = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const senderId = req.user?.userId;
 
     try {
@@ -521,14 +549,18 @@ export const sendSessionInvitation = async (req: AuthRequest, res: Response): Pr
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const acceptSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+export const acceptSessionInvitation = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const userId = req.user?.userId;
 
-    let client = null;
+    let client: PoolClient | null = null;
 
     try {
         if (!userId) {
@@ -541,7 +573,6 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
         const data = invitationIdSchema.parse(req.params);
 
         client = await pool.connect();
-
         await client.query('BEGIN');
 
         const invitation = await client.query(
@@ -555,8 +586,7 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
         );
 
         if (invitation.rowCount === 0) {
-            await client.query('ROLLBACK');
-
+            await errorTransaction(client);
             res.status(404).json({
                 message: 'Invitation not found',
             });
@@ -576,8 +606,7 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
         );
 
         if (session.rowCount === 0) {
-            await client.query('ROLLBACK');
-
+            await errorTransaction(client);
             res.status(404).json({
                 message: 'Session not found',
             });
@@ -597,8 +626,7 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
         const currentPlayersNum = Number(currentPlayers.rows[0].current_players);
 
         if (currentPlayersNum >= maxPlayers) {
-            await client.query('ROLLBACK');
-
+            await errorTransaction(client);
             res.status(409).json({
                 message: 'There are no available spots in the playroom',
             });
@@ -631,12 +659,10 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             userMember: userMember.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
-        }
-
-        if (client) {
-            await client.query('ROLLBACK');
         }
 
         if (
@@ -650,7 +676,7 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
-        throw error;
+        next(error);
     } finally {
         if (client) {
             client.release();
@@ -658,7 +684,11 @@ export const acceptSessionInvitation = async (req: AuthRequest, res: Response): 
     }
 };
 
-export const rejectSessionInvitation = async (req: AuthRequest, res: Response): Promise<void> => {
+export const rejectSessionInvitation = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const userId = req.user?.userId;
 
     try {
@@ -692,11 +722,15 @@ export const rejectSessionInvitation = async (req: AuthRequest, res: Response): 
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const getSessionsInvitations = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getSessionsInvitations = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const userId = req.user?.userId;
 
     try {
@@ -719,7 +753,7 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
             LEFT JOIN session_members sm
                 ON s.id = sm.session_id
             WHERE si.receiver_id = $1 AND si.status = 'pending' AND s.status = 'waiting'
-            GROUP BY si.id, u.name, g.name, s.title, s.max_players
+            GROUP BY si.id, u.name, g.name, s.title, s.max_players, s.created_at
         `;
 
         const userInvitations = await query(sql, [userId]);
@@ -728,11 +762,15 @@ export const getSessionsInvitations = async (req: AuthRequest, res: Response): P
             userInvitations: userInvitations.rows,
         });
     } catch (error) {
-        throw error;
+        next(error);
     }
 };
 
-export const startSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const startSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const ownerId = req.user?.userId;
 
     try {
@@ -769,11 +807,15 @@ export const startSession = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const completeSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const completeSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const ownerId = req.user?.userId;
 
     try {
@@ -810,14 +852,18 @@ export const completeSession = async (req: AuthRequest, res: Response): Promise<
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
 
-export const cancelSession = async (req: AuthRequest, res: Response): Promise<void> => {
+export const cancelSession = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     const ownerId = req.user?.userId;
 
-    let client = null;
+    let client: PoolClient | null = null;
 
     try {
         if (!ownerId) {
@@ -830,7 +876,6 @@ export const cancelSession = async (req: AuthRequest, res: Response): Promise<vo
         const data = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
-
         await client.query('BEGIN');
 
         const cancelSession = await client.query(
@@ -843,7 +888,7 @@ export const cancelSession = async (req: AuthRequest, res: Response): Promise<vo
         );
 
         if (cancelSession.rowCount === 0) {
-            await client.query('ROLLBACK');
+            await errorTransaction(client);
             res.status(409).json({
                 message: 'Failed to cancel the current session',
             });
@@ -866,19 +911,23 @@ export const cancelSession = async (req: AuthRequest, res: Response): Promise<vo
             cancel: cancelSession.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
 
-        if (client) await client.query('ROLLBACK');
-
-        throw error;
+        next(error);
     } finally {
         if (client) client.release();
     }
 };
 
-export const getSessionMessages = async (req: Request, res: Response): Promise<void> => {
+export const getSessionMessages = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
     try {
         const data = sessionIdSchema.parse(req.params);
 
@@ -901,6 +950,6 @@ export const getSessionMessages = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        throw error;
+        next(error);
     }
 };
