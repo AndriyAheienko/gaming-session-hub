@@ -14,6 +14,7 @@ import {
 } from '../schema/sessions.schema.js';
 import { getGameById } from '../services/rawgService.js';
 import { errorTransaction } from '../utils/errorTransaction.js';
+import { addMemberandNotify, notifySessionMembers } from '../services/sessionService.js';
 
 export const createSession = async (
     req: AuthRequest,
@@ -358,18 +359,13 @@ export const joinSession = async (
             return;
         }
 
-        const sql = `
-            INSERT INTO session_members (session_id , user_id)
-            VALUES ($1, $2)
-            RETURNING session_id, user_id, role, joined_at 
-        `;
-
-        const sessionMember = await client.query(sql, [data.sessionId, memberId]);
+        const result = await addMemberandNotify(client, data.sessionId, memberId);
 
         await client.query('COMMIT');
 
         res.status(201).json({
-            session_member: sessionMember.rows[0],
+            session_member: result.sessionMember,
+            membersNotifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -400,6 +396,8 @@ export const leaveSession = async (
 ): Promise<void> => {
     const userId = req.user?.userId;
 
+    let client: PoolClient | null = null;
+
     try {
         if (!userId) {
             res.status(401).json({
@@ -410,9 +408,15 @@ export const leaveSession = async (
 
         const data = sessionIdSchema.parse(req.params);
 
-        const session = await query('SELECT id FROM sessions WHERE id = $1', [data.sessionId]);
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        const session = await client.query('SELECT id FROM sessions WHERE id = $1', [
+            data.sessionId,
+        ]);
 
         if (session.rowCount === 0) {
+            await errorTransaction(client);
             res.status(404).json({ message: 'Session not found' });
             return;
         }
@@ -423,39 +427,51 @@ export const leaveSession = async (
             WHERE session_id = $1 AND user_id = $2
         `;
 
-        const userExist = await query(sqlExist, [data.sessionId, userId]);
+        const userExist = await client.query(sqlExist, [data.sessionId, userId]);
 
         if (userExist.rowCount === 0) {
+            await errorTransaction(client);
             res.status(409).json({ message: 'The user is not a participant in the session' });
             return;
         }
 
         if (userExist.rows[0].role === 'owner') {
+            await errorTransaction(client);
             res.status(409).json({
                 message: 'The session owner cannot leave the session',
             });
             return;
         }
 
-        const exitMember = await query(
+        const result = await notifySessionMembers(client, data.sessionId, userId, 'session_left');
+
+        const exitMember = await client.query(
             'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
             [data.sessionId, userId],
         );
 
         if (exitMember.rowCount === 0) {
+            await errorTransaction(client);
             res.status(404).json({ message: 'User not found in this session' });
             return;
         }
 
+        await client.query('COMMIT');
+
         res.status(200).json({
             message: 'The user has successfully left the session',
+            membersNotifications: result.membersNotifications,
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
 
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -465,6 +481,8 @@ export const sendSessionInvitation = async (
     next: NextFunction,
 ): Promise<void> => {
     const senderId = req.user?.userId;
+
+    let client: PoolClient | null = null;
 
     try {
         if (!senderId) {
@@ -476,32 +494,39 @@ export const sendSessionInvitation = async (
 
         const data = sendInvitationParamsSchema.parse(req.params);
 
+        if (senderId === data.receiverId) {
+            res.status(400).json({ message: 'You cannot send a request to yourself' });
+            return;
+        }
+
+        client = await pool.connect();
+        await client.query('BEGIN');
+
         const sqlSessionExist = `
             SELECT owner_id
             FROM sessions
             WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
         `;
 
-        const sessionOwner = await query(sqlSessionExist, [data.sessionId, senderId]);
+        const sessionOwner = await client.query(sqlSessionExist, [data.sessionId, senderId]);
 
         if (sessionOwner.rowCount === 0) {
+            await errorTransaction(client);
             res.status(404).json({ message: 'Session not found' });
             return;
         }
 
-        if (senderId === data.receiverId) {
-            res.status(400).json({ message: 'You cannot send a request to yourself' });
-            return;
-        }
-
-        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [data.receiverId]);
+        const receiverExist = await client.query('SELECT id FROM users WHERE id = $1', [
+            data.receiverId,
+        ]);
 
         if (receiverExist.rowCount === 0) {
+            await errorTransaction(client);
             res.status(404).json({ message: 'Receiver not found' });
             return;
         }
 
-        const receiverMember = await query(
+        const receiverMember = await client.query(
             `
                 SELECT id FROM session_members
                 WHERE session_id = $1 AND user_id = $2
@@ -510,16 +535,18 @@ export const sendSessionInvitation = async (
         );
 
         if ((receiverMember.rowCount ?? 0) > 0) {
+            await errorTransaction(client);
             res.status(409).json({ message: 'The invitation recipient is already in the session' });
             return;
         }
 
-        const invitationExist = await query(
+        const invitationExist = await client.query(
             `SELECT status FROM session_invitations WHERE session_id = $1 AND sender_id = $2 AND receiver_id = $3 AND status = 'pending'`,
             [data.sessionId, senderId, data.receiverId],
         );
 
         if ((invitationExist.rowCount ?? 0) > 0) {
+            await errorTransaction(client);
             res.status(409).json({ message: 'You have already sent an invitation to this user' });
             return;
         }
@@ -530,12 +557,30 @@ export const sendSessionInvitation = async (
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const sessionInvitation = await query(sql, [data.sessionId, senderId, data.receiverId]);
+        const sessionInvitation = await client.query(sql, [
+            data.sessionId,
+            senderId,
+            data.receiverId,
+        ]);
+
+        const notification = await client.query(
+            `
+                INSERT INTO notifications (actor_id, user_id, type, session_id)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, actor_id, type, read_at, created_at
+            `,
+            [senderId, data.receiverId, 'session_invite', data.sessionId],
+        );
+
+        await client.query('COMMIT');
 
         res.status(201).json({
             sessionInvitation: sessionInvitation.rows[0],
+            notification: notification.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
@@ -550,6 +595,8 @@ export const sendSessionInvitation = async (
         }
 
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -643,20 +690,14 @@ export const acceptSessionInvitation = async (
             [data.invitationId],
         );
 
-        const userMember = await client.query(
-            `
-                INSERT INTO session_members (session_id, user_id)
-                VALUES ($1, $2)
-                RETURNING id, session_id, user_id, role, joined_at
-            `,
-            [sessionId, userId],
-        );
+        const result = await addMemberandNotify(client, sessionId, userId);
 
         await client.query('COMMIT');
 
         res.status(200).json({
             invitation: acceptedRequest.rows[0],
-            userMember: userMember.rows[0],
+            userMember: result.sessionMember,
+            membersNotifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -773,6 +814,8 @@ export const startSession = async (
 ): Promise<void> => {
     const ownerId = req.user?.userId;
 
+    let client: PoolClient | null = null;
+
     try {
         if (!ownerId) {
             res.status(401).json({
@@ -783,7 +826,10 @@ export const startSession = async (
 
         const data = sessionIdSchema.parse(req.params);
 
-        const startSession = await query(
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        const startSession = await client.query(
             `
                 UPDATE sessions SET status = 'active'
                 WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
@@ -793,21 +839,36 @@ export const startSession = async (
         );
 
         if (startSession.rowCount === 0) {
+            await errorTransaction(client);
             res.status(409).json({
                 message: 'Unable to start this session',
             });
             return;
         }
 
+        const result = await notifySessionMembers(
+            client,
+            data.sessionId,
+            ownerId,
+            'session_started',
+        );
+
+        await client.query('COMMIT');
+
         res.status(200).json({
             start: startSession.rows[0],
+            membersNotifications: result.membersNotifications,
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
 
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -895,6 +956,13 @@ export const cancelSession = async (
             return;
         }
 
+        const result = await notifySessionMembers(
+            client,
+            data.sessionId,
+            ownerId,
+            'session_cancelled',
+        );
+
         await client.query(
             `
             DELETE FROM session_members 
@@ -909,6 +977,7 @@ export const cancelSession = async (
         res.status(200).json({
             message: 'Session successfully cancelled',
             cancel: cancelSession.rows[0],
+            membersNotifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);

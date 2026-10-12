@@ -121,7 +121,8 @@ export const initDB = async () => {
                 'friend_accepted', 
                 'session_invite', 
                 'session_joined', 
-                'session_left', 
+                'session_left',
+                'session_started',
                 'session_cancelled',
                 'new_rating'
             )),
