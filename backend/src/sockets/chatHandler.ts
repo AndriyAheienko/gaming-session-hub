@@ -7,7 +7,7 @@ import { jwtPayloadSchema, authSchema } from '../schema/auth.schema.js';
 import { joinSchema, socketSchema, sendSchema } from '../schema/chat.schema.js';
 import { errorSocket } from '../utils/errorSocket.js';
 
-export const chatHandler = (httpServer: HttpServer): void => {
+export const chatHandler = (httpServer: HttpServer): Server => {
     const io = new Server(httpServer, {
         cors: {
             origin: env.CORS_ORIGIN,
@@ -33,13 +33,13 @@ export const chatHandler = (httpServer: HttpServer): void => {
     });
 
     io.on('connection', (socket: Socket) => {
-        console.log('New user connection: ', socket.id);
+        const { userId } = socketSchema.parse(socket.data);
+        socket.join(`user_${userId}`);
+        console.log(`New user connection: ${socket.id}, joined personal room: user_${userId}`);
 
         socket.on('join_session_chat', async (data, callback) => {
             try {
                 const body = joinSchema.parse(data);
-                const socketBody = socketSchema.parse(socket.data);
-
                 const roomName = `session_${body.sessionId}`;
 
                 const sql = `
@@ -48,7 +48,7 @@ export const chatHandler = (httpServer: HttpServer): void => {
                     WHERE session_id = $1 AND user_id = $2
                 `;
 
-                const userExist = await query(sql, [body.sessionId, socketBody.userId]);
+                const userExist = await query(sql, [body.sessionId, userId]);
 
                 if (userExist.rows.length === 0) {
                     if (typeof callback === 'function') {
@@ -62,9 +62,7 @@ export const chatHandler = (httpServer: HttpServer): void => {
 
                 await socket.join(roomName);
 
-                console.log(
-                    `User id_${socketBody.userId} successfully entered the room ${body.sessionId}`,
-                );
+                console.log(`User id_${userId} successfully entered the room ${body.sessionId}`);
 
                 if (typeof callback === 'function') {
                     callback({ success: true });
@@ -77,15 +75,16 @@ export const chatHandler = (httpServer: HttpServer): void => {
         socket.on('send_message', async (data, callback) => {
             try {
                 const body = sendSchema.parse(data);
-                const socketBody = socketSchema.parse(socket.data);
 
                 const postMessageSql = `
                     WITH inserted_message AS (
                         INSERT INTO messages (session_id, sender_id, text)
                         SELECT $1, $2, $3
                         WHERE EXISTS (
-                            SELECT 1 FROM session_members
-                            WHERE session_id = $1 AND user_id = $2
+                            SELECT 1 FROM session_members sm
+                            INNER JOIN sessions s
+                            ON sm.session_id = s.id
+                            WHERE sm.session_id = $1 AND sm.user_id = $2 AND s.status IN ('waiting', 'active')
                         )
                         RETURNING id, sender_id, text, created_at
                     )
@@ -95,17 +94,13 @@ export const chatHandler = (httpServer: HttpServer): void => {
                     ON im.sender_id = u.id
                 `;
 
-                const result = await query(postMessageSql, [
-                    body.sessionId,
-                    socketBody.userId,
-                    body.text,
-                ]);
+                const result = await query(postMessageSql, [body.sessionId, userId, body.text]);
 
                 if (result.rows.length === 0) {
                     if (typeof callback === 'function') {
                         callback({
                             success: false,
-                            message: 'The user does not belong to the session',
+                            message: 'Cannot send messages in this session',
                         });
                     }
                     return;
@@ -128,4 +123,6 @@ export const chatHandler = (httpServer: HttpServer): void => {
             console.log('User is disconnect: ', socket.id);
         });
     });
+
+    return io;
 };

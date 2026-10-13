@@ -993,12 +993,33 @@ export const cancelSession = async (
 };
 
 export const getSessionMessages = async (
-    req: Request,
+    req: AuthRequest,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
+    const userId = req.user?.userId;
+
     try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
         const data = sessionIdSchema.parse(req.params);
+
+        const membership = await query(
+            'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
+            [data.sessionId, userId],
+        );
+
+        if (membership.rowCount === 0) {
+            res.status(403).json({
+                message: 'Access denied. You must be a member of the session to view messages',
+            });
+            return;
+        }
 
         const messageSql = `
             SELECT m.id, m.text, m.created_at, u.name, u.avatar_url

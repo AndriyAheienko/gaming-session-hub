@@ -13,8 +13,8 @@ export const notifySessionMembers = async (
 ) => {
     const membersNotifications = await client.query<NotificationResult>(
         `
-            INSERT INTO notifications (actor_id, user_id, type, session_id)
-            SELECT $1, user_id, $3, $2
+            INSERT INTO notifications (actor_id, user_id, session_id, type)
+            SELECT $1, user_id, $2, $3
             FROM session_members sm
             WHERE sm.session_id = $2 AND sm.user_id != $1
             RETURNING id, actor_id, type, created_at

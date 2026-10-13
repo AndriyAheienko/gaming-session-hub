@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { createServer } from 'http';
 
 import { env } from './config/env.js';
@@ -11,6 +11,7 @@ import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
 import friendsRoutes from './routes/friendsRoutes.js';
 import gamesRoutes from './routes/gamesRoutes.js';
+import notificationsRoutes from './routes/notificationsRoutes.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -32,10 +33,19 @@ app.get('/health', (_req: Request, res: Response) => {
     });
 });
 
+const httpServer = createServer(app);
+const io = chatHandler(httpServer);
+
+app.use((req: Request, _res: Response, next: NextFunction) => {
+    req.io = io;
+    next();
+});
+
 app.use('/auth', authRoutes);
 app.use('/sessions', sessionsRoutes);
 app.use('/friends', friendsRoutes);
 app.use('/games', gamesRoutes);
+app.use('/notifications', notificationsRoutes);
 
 app.use((_req: Request, res: Response) => {
     res.status(404).json({
@@ -44,10 +54,6 @@ app.use((_req: Request, res: Response) => {
 });
 
 app.use(errorHandler);
-
-const httpServer = createServer(app);
-
-chatHandler(httpServer);
 
 const server = httpServer.listen(port, () => {
     console.log(`Server running on port ${env.PORT}`);

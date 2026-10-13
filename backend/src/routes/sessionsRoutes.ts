@@ -29,7 +29,7 @@ router.patch('/invitations/:invitationId/accept', protect, acceptSessionInvitati
 router.patch('/invitations/:invitationId/reject', protect, rejectSessionInvitation);
 
 router.get('/:sessionId/members', getSessionMembers);
-router.get('/:sessionId/messages', getSessionMessages);
+router.get('/:sessionId/messages', protect, getSessionMessages);
 
 router.post('/:sessionId/invitations/:receiverId', protect, sendSessionInvitation);
 router.post('/:sessionId/ratings', protect, rateSessionMember);
