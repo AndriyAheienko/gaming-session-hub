@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { PoolClient } from 'pg';
 
-import type { AuthRequest } from '../types/express.types.js';
 import pool, { query } from '../config/bd.js';
 import { errorZod } from '../utils/errorZod.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
@@ -14,10 +13,14 @@ import {
 } from '../schema/sessions.schema.js';
 import { getGameById } from '../services/rawgService.js';
 import { errorTransaction } from '../utils/errorTransaction.js';
-import { addMemberandNotify, notifySessionMembers } from '../services/sessionService.js';
+import {
+    addMemberAndNotify,
+    notifySessionMembers,
+    createSingleNotification,
+} from '../services/sessionService.js';
 
 export const createSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -219,7 +222,7 @@ export const getSessionById = async (
     next: NextFunction,
 ): Promise<void> => {
     try {
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         const sql = `
             SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
@@ -234,7 +237,7 @@ export const getSessionById = async (
             GROUP BY s.id, g.name, u.id, u.name
         `;
 
-        const session = await query(sql, [data.sessionId]);
+        const session = await query(sql, [sessionId]);
 
         if ((session.rowCount ?? 0) === 0) {
             res.status(404).json({ message: 'Session not found' });
@@ -259,9 +262,9 @@ export const getSessionMembers = async (
     next: NextFunction,
 ): Promise<void> => {
     try {
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
-        const session = await query('SELECT id FROM sessions WHERE id = $1', [data.sessionId]);
+        const session = await query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
 
         if (session.rowCount === 0) {
             res.status(404).json({ message: 'Session not found' });
@@ -276,7 +279,7 @@ export const getSessionMembers = async (
             WHERE sm.session_id = $1
         `;
 
-        const sessionMembers = await query(sqlMembers, [data.sessionId]);
+        const sessionMembers = await query(sqlMembers, [sessionId]);
 
         res.status(200).json({
             members: sessionMembers.rows,
@@ -291,7 +294,7 @@ export const getSessionMembers = async (
 };
 
 export const joinSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -306,7 +309,7 @@ export const joinSession = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -318,7 +321,7 @@ export const joinSession = async (
                 WHERE id = $1 AND status = 'waiting'
                 FOR UPDATE
             `,
-            [data.sessionId],
+            [sessionId],
         );
 
         if (session.rowCount === 0) {
@@ -333,7 +336,7 @@ export const joinSession = async (
             WHERE session_id = $1
         `;
 
-        const currentPlayers = await client.query(currentPlayersSql, [data.sessionId]);
+        const currentPlayers = await client.query(currentPlayersSql, [sessionId]);
 
         const currentPlayersCount = Number(currentPlayers.rows[0].current_players);
         const maxPlayers = session.rows[0].max_players;
@@ -350,7 +353,7 @@ export const joinSession = async (
                 FROM session_members
                 WHERE session_id = $1 AND user_id = $2
             `,
-            [data.sessionId, memberId],
+            [sessionId, memberId],
         );
 
         if ((memberExist.rowCount ?? 0) > 0) {
@@ -359,13 +362,17 @@ export const joinSession = async (
             return;
         }
 
-        const result = await addMemberandNotify(client, data.sessionId, memberId);
+        const result = await addMemberAndNotify(client, sessionId, memberId);
 
         await client.query('COMMIT');
 
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
+
         res.status(201).json({
             session_member: result.sessionMember,
-            membersNotifications: result.membersNotifications,
+            notifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -390,7 +397,7 @@ export const joinSession = async (
 };
 
 export const leaveSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -406,14 +413,12 @@ export const leaveSession = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
 
-        const session = await client.query('SELECT id FROM sessions WHERE id = $1', [
-            data.sessionId,
-        ]);
+        const session = await client.query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
 
         if (session.rowCount === 0) {
             await errorTransaction(client);
@@ -427,7 +432,7 @@ export const leaveSession = async (
             WHERE session_id = $1 AND user_id = $2
         `;
 
-        const userExist = await client.query(sqlExist, [data.sessionId, userId]);
+        const userExist = await client.query(sqlExist, [sessionId, userId]);
 
         if (userExist.rowCount === 0) {
             await errorTransaction(client);
@@ -443,11 +448,11 @@ export const leaveSession = async (
             return;
         }
 
-        const result = await notifySessionMembers(client, data.sessionId, userId, 'session_left');
+        const result = await notifySessionMembers(client, sessionId, userId, 'session_left');
 
         const exitMember = await client.query(
             'DELETE FROM session_members WHERE session_id = $1 AND user_id = $2',
-            [data.sessionId, userId],
+            [sessionId, userId],
         );
 
         if (exitMember.rowCount === 0) {
@@ -458,9 +463,13 @@ export const leaveSession = async (
 
         await client.query('COMMIT');
 
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
+
         res.status(200).json({
             message: 'The user has successfully left the session',
-            membersNotifications: result.membersNotifications,
+            notifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -476,7 +485,7 @@ export const leaveSession = async (
 };
 
 export const sendSessionInvitation = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -492,9 +501,9 @@ export const sendSessionInvitation = async (
             return;
         }
 
-        const data = sendInvitationParamsSchema.parse(req.params);
+        const { sessionId, receiverId } = sendInvitationParamsSchema.parse(req.params);
 
-        if (senderId === data.receiverId) {
+        if (senderId === receiverId) {
             res.status(400).json({ message: 'You cannot send a request to yourself' });
             return;
         }
@@ -508,7 +517,7 @@ export const sendSessionInvitation = async (
             WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
         `;
 
-        const sessionOwner = await client.query(sqlSessionExist, [data.sessionId, senderId]);
+        const sessionOwner = await client.query(sqlSessionExist, [sessionId, senderId]);
 
         if (sessionOwner.rowCount === 0) {
             await errorTransaction(client);
@@ -517,7 +526,7 @@ export const sendSessionInvitation = async (
         }
 
         const receiverExist = await client.query('SELECT id FROM users WHERE id = $1', [
-            data.receiverId,
+            receiverId,
         ]);
 
         if (receiverExist.rowCount === 0) {
@@ -531,7 +540,7 @@ export const sendSessionInvitation = async (
                 SELECT id FROM session_members
                 WHERE session_id = $1 AND user_id = $2
             `,
-            [data.sessionId, data.receiverId],
+            [sessionId, receiverId],
         );
 
         if ((receiverMember.rowCount ?? 0) > 0) {
@@ -542,7 +551,7 @@ export const sendSessionInvitation = async (
 
         const invitationExist = await client.query(
             `SELECT status FROM session_invitations WHERE session_id = $1 AND sender_id = $2 AND receiver_id = $3 AND status = 'pending'`,
-            [data.sessionId, senderId, data.receiverId],
+            [sessionId, senderId, receiverId],
         );
 
         if ((invitationExist.rowCount ?? 0) > 0) {
@@ -557,26 +566,22 @@ export const sendSessionInvitation = async (
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const sessionInvitation = await client.query(sql, [
-            data.sessionId,
-            senderId,
-            data.receiverId,
-        ]);
+        const sessionInvitation = await client.query(sql, [sessionId, senderId, receiverId]);
 
-        const notification = await client.query(
-            `
-                INSERT INTO notifications (actor_id, user_id, type, session_id)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, actor_id, type, read_at, created_at
-            `,
-            [senderId, data.receiverId, 'session_invite', data.sessionId],
-        );
+        const result = await createSingleNotification(client, {
+            actorId: senderId,
+            userId: receiverId,
+            type: 'session_invite',
+            sessionId: sessionId,
+        });
 
         await client.query('COMMIT');
 
+        req.io.to(`user_${receiverId}`).emit('new_notification', result);
+
         res.status(201).json({
             sessionInvitation: sessionInvitation.rows[0],
-            notification: notification.rows[0],
+            notifications: result,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -601,7 +606,7 @@ export const sendSessionInvitation = async (
 };
 
 export const acceptSessionInvitation = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -617,7 +622,7 @@ export const acceptSessionInvitation = async (
             return;
         }
 
-        const data = invitationIdSchema.parse(req.params);
+        const { invitationId } = invitationIdSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -629,7 +634,7 @@ export const acceptSessionInvitation = async (
                 WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
                 FOR UPDATE
             `,
-            [data.invitationId, userId],
+            [invitationId, userId],
         );
 
         if (invitation.rowCount === 0) {
@@ -687,17 +692,21 @@ export const acceptSessionInvitation = async (
                 WHERE id = $1
                 RETURNING id, session_id, sender_id, receiver_id, status, created_at
             `,
-            [data.invitationId],
+            [invitationId],
         );
 
-        const result = await addMemberandNotify(client, sessionId, userId);
+        const result = await addMemberAndNotify(client, sessionId, userId);
 
         await client.query('COMMIT');
+
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
 
         res.status(200).json({
             invitation: acceptedRequest.rows[0],
             userMember: result.sessionMember,
-            membersNotifications: result.membersNotifications,
+            notifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -726,7 +735,7 @@ export const acceptSessionInvitation = async (
 };
 
 export const rejectSessionInvitation = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -740,7 +749,7 @@ export const rejectSessionInvitation = async (
             return;
         }
 
-        const data = invitationIdSchema.parse(req.params);
+        const { invitationId } = invitationIdSchema.parse(req.params);
 
         const sql = `
             UPDATE session_invitations SET status = 'rejected'
@@ -748,7 +757,7 @@ export const rejectSessionInvitation = async (
             RETURNING id, session_id, sender_id, receiver_id, status, created_at
         `;
 
-        const rejectedRequest = await query(sql, [userId, data.invitationId]);
+        const rejectedRequest = await query(sql, [userId, invitationId]);
 
         if (rejectedRequest.rowCount === 0) {
             res.status(409).json({ message: 'Failed to reject invite request in session' });
@@ -768,7 +777,7 @@ export const rejectSessionInvitation = async (
 };
 
 export const getSessionsInvitations = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -808,7 +817,7 @@ export const getSessionsInvitations = async (
 };
 
 export const startSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -824,7 +833,7 @@ export const startSession = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -835,7 +844,7 @@ export const startSession = async (
                 WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
                 RETURNING id, status
             `,
-            [data.sessionId, ownerId],
+            [sessionId, ownerId],
         );
 
         if (startSession.rowCount === 0) {
@@ -846,18 +855,17 @@ export const startSession = async (
             return;
         }
 
-        const result = await notifySessionMembers(
-            client,
-            data.sessionId,
-            ownerId,
-            'session_started',
-        );
+        const result = await notifySessionMembers(client, sessionId, ownerId, 'session_started');
 
         await client.query('COMMIT');
 
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
+
         res.status(200).json({
             start: startSession.rows[0],
-            membersNotifications: result.membersNotifications,
+            notifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -873,7 +881,7 @@ export const startSession = async (
 };
 
 export const completeSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -887,7 +895,7 @@ export const completeSession = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         const completeSession = await query(
             `
@@ -895,7 +903,7 @@ export const completeSession = async (
                 WHERE id = $1 AND owner_id = $2 AND status = 'active'
                 RETURNING id, status
             `,
-            [data.sessionId, ownerId],
+            [sessionId, ownerId],
         );
 
         if (completeSession.rowCount === 0) {
@@ -918,7 +926,7 @@ export const completeSession = async (
 };
 
 export const cancelSession = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -934,7 +942,7 @@ export const cancelSession = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -945,7 +953,7 @@ export const cancelSession = async (
                 WHERE id = $1 AND owner_id = $2 AND status IN ('waiting', 'active')
                 RETURNING id, status
             `,
-            [data.sessionId, ownerId],
+            [sessionId, ownerId],
         );
 
         if (cancelSession.rowCount === 0) {
@@ -956,12 +964,7 @@ export const cancelSession = async (
             return;
         }
 
-        const result = await notifySessionMembers(
-            client,
-            data.sessionId,
-            ownerId,
-            'session_cancelled',
-        );
+        const result = await notifySessionMembers(client, sessionId, ownerId, 'session_cancelled');
 
         await client.query(
             `
@@ -969,15 +972,19 @@ export const cancelSession = async (
             WHERE session_id = $1
             RETURNING id
         `,
-            [data.sessionId],
+            [sessionId],
         );
 
         await client.query('COMMIT');
 
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
+
         res.status(200).json({
             message: 'Session successfully cancelled',
             cancel: cancelSession.rows[0],
-            membersNotifications: result.membersNotifications,
+            notifications: result.membersNotifications,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -993,7 +1000,7 @@ export const cancelSession = async (
 };
 
 export const getSessionMessages = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -1007,11 +1014,11 @@ export const getSessionMessages = async (
             return;
         }
 
-        const data = sessionIdSchema.parse(req.params);
+        const { sessionId } = sessionIdSchema.parse(req.params);
 
         const membership = await query(
             'SELECT id FROM session_members WHERE session_id = $1 AND user_id = $2',
-            [data.sessionId, userId],
+            [sessionId, userId],
         );
 
         if (membership.rowCount === 0) {
@@ -1030,7 +1037,7 @@ export const getSessionMessages = async (
             ORDER BY m.created_at ASC
         `;
 
-        const messages = await query(messageSql, [data.sessionId]);
+        const messages = await query(messageSql, [sessionId]);
 
         res.status(200).json({
             messages: messages.rows,

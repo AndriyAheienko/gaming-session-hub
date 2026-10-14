@@ -6,5 +6,5 @@ export const ratingsParamsSchema = z.object({
 
 export const ratingBodySchema = z.object({
     targetId: z.number().int().positive(),
-    rating: z.number().int().min(1).max(5),
+    ratingNum: z.number().int().min(1).max(5),
 });

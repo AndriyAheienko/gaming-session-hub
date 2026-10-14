@@ -1,15 +1,15 @@
-import type { Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import type { PoolClient } from 'pg';
 
-import type { AuthRequest } from '../types/express.types.js';
 import { errorZod } from '../utils/errorZod.js';
 import pool, { query } from '../config/bd.js';
 import { isPostgresError } from '../utils/isPostgresError.js';
 import { receiverSchema, friendshipSchema } from '../schema/friendships.schema.js';
 import { errorTransaction } from '../utils/errorTransaction.js';
+import { createSingleNotification } from '../services/sessionService.js';
 
 export const sendFriendRequest = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -25,16 +25,16 @@ export const sendFriendRequest = async (
             return;
         }
 
-        const data = receiverSchema.parse(req.params);
+        const { receiverId } = receiverSchema.parse(req.params);
 
-        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [data.receiverId]);
+        const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiverId]);
 
         if (receiverExist.rowCount === 0) {
             res.status(404).json({ message: 'Receiver not found' });
             return;
         }
 
-        if (senderId === data.receiverId) {
+        if (senderId === receiverId) {
             res.status(400).json({ message: 'You cannot send a request to yourself' });
             return;
         }
@@ -52,7 +52,7 @@ export const sendFriendRequest = async (
                 (receiver_id = $1 AND sender_id = $2)
             )
             AND status IN ('pending', 'accepted')`,
-            [senderId, data.receiverId],
+            [senderId, receiverId],
         );
 
         if ((friendshipExist.rowCount ?? 0) > 0) {
@@ -63,23 +63,23 @@ export const sendFriendRequest = async (
 
         const friendship = await client.query(
             'INSERT INTO friendships (sender_id, receiver_id) VALUES ($1, $2) RETURNING id, sender_id, receiver_id, status, created_at',
-            [senderId, data.receiverId],
+            [senderId, receiverId],
         );
 
-        const notifications = await client.query(
-            `
-            INSERT INTO notifications (actor_id, user_id, type, friendship_id)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, actor_id, type, read_at, created_at
-        `,
-            [senderId, data.receiverId, 'friend_request', friendship.rows[0].id],
-        );
+        const notification = await createSingleNotification(client, {
+            actorId: senderId,
+            userId: receiverId,
+            type: 'friend_request',
+            friendshipId: friendship.rows[0].id,
+        });
 
         await client.query('COMMIT');
 
+        req.io.to(`user_${receiverId}`).emit('new_notification', notification);
+
         res.status(201).json({
             friendship: friendship.rows[0],
-            notifications: notifications.rows[0],
+            notifications: notification,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -104,7 +104,7 @@ export const sendFriendRequest = async (
 };
 
 export const acceptFriendRequest = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -120,7 +120,7 @@ export const acceptFriendRequest = async (
             return;
         }
 
-        const data = friendshipSchema.parse(req.params);
+        const { friendshipId } = friendshipSchema.parse(req.params);
 
         client = await pool.connect();
         await client.query('BEGIN');
@@ -131,7 +131,7 @@ export const acceptFriendRequest = async (
             RETURNING id, sender_id, receiver_id, status, created_at 
         `;
 
-        const acceptRequest = await client.query(sql, [data.friendshipId, userId]);
+        const acceptRequest = await client.query(sql, [friendshipId, userId]);
 
         if (acceptRequest.rowCount === 0) {
             await errorTransaction(client);
@@ -139,20 +139,20 @@ export const acceptFriendRequest = async (
             return;
         }
 
-        const notification = await client.query(
-            `
-                INSERT INTO notifications (actor_id, user_id, type, friendship_id)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, actor_id, type, read_at, created_at 
-            `,
-            [userId, acceptRequest.rows[0].sender_id, 'friend_accepted', data.friendshipId],
-        );
+        const notification = await createSingleNotification(client, {
+            actorId: userId,
+            userId: acceptRequest.rows[0].sender_id,
+            type: 'friend_accepted',
+            friendshipId: friendshipId,
+        });
 
         await client.query('COMMIT');
 
+        req.io.to(`user_${acceptRequest.rows[0].sender_id}`).emit('new_notification', notification);
+
         res.status(200).json({
             acceptRequest: acceptRequest.rows[0],
-            notification: notification.rows[0],
+            notifications: notification,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -168,7 +168,7 @@ export const acceptFriendRequest = async (
 };
 
 export const rejectFriendRequest = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -182,7 +182,7 @@ export const rejectFriendRequest = async (
             return;
         }
 
-        const data = friendshipSchema.parse(req.params);
+        const { friendshipId } = friendshipSchema.parse(req.params);
 
         const sql = `
             UPDATE friendships SET status = 'rejected'
@@ -190,7 +190,7 @@ export const rejectFriendRequest = async (
             RETURNING id, sender_id, receiver_id, status, created_at  
         `;
 
-        const rejectRequest = await query(sql, [data.friendshipId, userId]);
+        const rejectRequest = await query(sql, [friendshipId, userId]);
 
         if (rejectRequest.rowCount === 0) {
             res.status(400).json({ message: 'Failed to reject the friend request' });
@@ -209,35 +209,8 @@ export const rejectFriendRequest = async (
     }
 };
 
-export const getUserFriends = async (req: AuthRequest, res: Response): Promise<void> => {
-    const userId = req.user?.userId;
-
-    if (!userId) {
-        res.status(401).json({
-            message: 'The user does not have access to perform this operation',
-        });
-        return;
-    }
-
-    const friends = await query(
-        `
-        SELECT u.id, u.name, u.rating_sum, u.avatar_url
-        FROM friendships f
-        INNER JOIN users u
-            ON (f.sender_id = $1 AND u.id = f.receiver_id)
-            OR (f.receiver_id = $1 AND u.id = f.sender_id)
-        WHERE f.status = 'accepted'
-        `,
-        [userId],
-    );
-
-    res.status(200).json({
-        friends: friends.rows,
-    });
-};
-
-export const deleteUserFriend = async (
-    req: AuthRequest,
+export const getUserFriends = async (
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -251,7 +224,42 @@ export const deleteUserFriend = async (
             return;
         }
 
-        const data = friendshipSchema.parse(req.params);
+        const friends = await query(
+            `
+        SELECT u.id, u.name, u.rating_sum, u.avatar_url
+        FROM friendships f
+        INNER JOIN users u
+            ON (f.sender_id = $1 AND u.id = f.receiver_id)
+            OR (f.receiver_id = $1 AND u.id = f.sender_id)
+        WHERE f.status = 'accepted'
+        `,
+            [userId],
+        );
+
+        res.status(200).json({
+            friends: friends.rows,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const deleteUserFriend = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    const userId = req.user?.userId;
+
+    try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const { friendshipId } = friendshipSchema.parse(req.params);
 
         const deleteFriend = await query(
             `
@@ -259,7 +267,7 @@ export const deleteUserFriend = async (
                 WHERE id = $1 AND status = 'accepted' AND (sender_id = $2 OR receiver_id = $2)
                 RETURNING id, sender_id, receiver_id, status, created_at
             `,
-            [data.friendshipId, userId],
+            [friendshipId, userId],
         );
 
         if (deleteFriend.rowCount === 0) {

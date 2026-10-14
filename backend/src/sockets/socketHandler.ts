@@ -7,7 +7,7 @@ import { jwtPayloadSchema, authSchema } from '../schema/auth.schema.js';
 import { joinSchema, socketSchema, sendSchema } from '../schema/chat.schema.js';
 import { errorSocket } from '../utils/errorSocket.js';
 
-export const chatHandler = (httpServer: HttpServer): Server => {
+export const socketHandler = (httpServer: HttpServer): Server => {
     const io = new Server(httpServer, {
         cors: {
             origin: env.CORS_ORIGIN,

@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { AuthRequest } from '../types/express.types.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -89,7 +88,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }
 };
 
-export const getMyInfo = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getMyInfo = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user?.userId;
 
     if (!userId) {

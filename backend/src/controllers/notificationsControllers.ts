@@ -1,11 +1,10 @@
-import type { Response, NextFunction } from 'express';
-import type { AuthRequest } from '../types/express.types.js';
+import type { Request, Response, NextFunction } from 'express';
 import { query } from '../config/bd.js';
 import { errorZod } from '../utils/errorZod.js';
 import { querySchema, notificationId } from '../schema/notifications.schema.js';
 
 export const getNotifications = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -49,7 +48,7 @@ export const getNotifications = async (
 };
 
 export const notificationRead = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {
@@ -95,7 +94,7 @@ export const notificationRead = async (
 };
 
 export const allNotificationsRead = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> => {

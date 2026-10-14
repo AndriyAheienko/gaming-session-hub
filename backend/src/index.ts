@@ -5,7 +5,7 @@ import { createServer } from 'http';
 
 import { env } from './config/env.js';
 import { closePool } from './config/bd.js';
-import { chatHandler } from './sockets/chatHandler.js';
+import { socketHandler } from './sockets/socketHandler.js';
 
 import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
@@ -34,7 +34,7 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 const httpServer = createServer(app);
-const io = chatHandler(httpServer);
+const io = socketHandler(httpServer);
 
 app.use((req: Request, _res: Response, next: NextFunction) => {
     req.io = io;

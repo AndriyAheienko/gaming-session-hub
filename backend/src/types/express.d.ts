@@ -4,6 +4,9 @@ declare global {
     namespace Express {
         interface Request {
             io: Server;
+            user?: {
+                userId: number;
+            };
         }
     }
 }
