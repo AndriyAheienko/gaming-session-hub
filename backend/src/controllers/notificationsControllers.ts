@@ -82,7 +82,7 @@ export const notificationRead = async (
         }
 
         res.status(200).json({
-            read: notificationRead.rows[0],
+            notification: notificationRead.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -118,7 +118,7 @@ export const allNotificationsRead = async (
         );
 
         res.status(200).json({
-            allRead: allNotificationRead.rows,
+            notifications: allNotificationRead.rows,
         });
     } catch (error) {
         next(error);

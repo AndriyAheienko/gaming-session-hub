@@ -9,7 +9,7 @@ import type {
 export const createSingleNotification = async (
     client: PoolClient,
     data: CreateNotificationParams,
-): Promise<NotificationResult> => {
+) => {
     const sql = `
             WITH inserted_notification AS (
                 INSERT INTO notifications (actor_id, user_id, type, session_id, friendship_id)
@@ -22,7 +22,7 @@ export const createSingleNotification = async (
             ON i.actor_id = u.id
         `;
 
-    const result = await client.query(sql, [
+    const result = await client.query<NotificationResult>(sql, [
         data.actorId,
         data.userId,
         data.type,

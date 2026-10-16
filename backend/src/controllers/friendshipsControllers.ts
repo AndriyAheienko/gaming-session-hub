@@ -27,15 +27,15 @@ export const sendFriendRequest = async (
 
         const { receiverId } = receiverSchema.parse(req.params);
 
+        if (senderId === receiverId) {
+            res.status(400).json({ message: 'You cannot send a request to yourself' });
+            return;
+        }
+
         const receiverExist = await query('SELECT id FROM users WHERE id = $1', [receiverId]);
 
         if (receiverExist.rowCount === 0) {
             res.status(404).json({ message: 'Receiver not found' });
-            return;
-        }
-
-        if (senderId === receiverId) {
-            res.status(400).json({ message: 'You cannot send a request to yourself' });
             return;
         }
 
@@ -79,7 +79,7 @@ export const sendFriendRequest = async (
 
         res.status(201).json({
             friendship: friendship.rows[0],
-            notifications: notification,
+            notification: notification,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -151,8 +151,8 @@ export const acceptFriendRequest = async (
         req.io.to(`user_${acceptRequest.rows[0].sender_id}`).emit('new_notification', notification);
 
         res.status(200).json({
-            acceptRequest: acceptRequest.rows[0],
-            notifications: notification,
+            request: acceptRequest.rows[0],
+            notification: notification,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -198,7 +198,7 @@ export const rejectFriendRequest = async (
         }
 
         res.status(200).json({
-            rejectRequest: rejectRequest.rows[0],
+            request: rejectRequest.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -271,13 +271,13 @@ export const deleteUserFriend = async (
         );
 
         if (deleteFriend.rowCount === 0) {
-            res.status(400).json({ message: 'Failed to deleted the friend' });
+            res.status(400).json({ message: 'Failed to remove the friend' });
             return;
         }
 
         res.status(200).json({
             message: 'The user has been successfully removed from your friends list',
-            deleteFriend: deleteFriend.rows[0],
+            friend: deleteFriend.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {

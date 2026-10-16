@@ -115,7 +115,7 @@ export const rateSessionMember = async (
         res.status(201).json({
             rating: rating.rows[0],
             user: user.rows[0],
-            notifications: result,
+            notification: result,
         });
     } catch (error) {
         await errorTransaction(client);

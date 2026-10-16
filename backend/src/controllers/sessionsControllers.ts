@@ -101,8 +101,8 @@ export const createSession = async (
         await client.query('COMMIT');
 
         res.status(201).json({
-            session: session.rows[0],
-            ownerUser: owner.rows[0],
+            sessions: session.rows[0],
+            user: owner.rows[0],
         });
     } catch (error) {
         await errorTransaction(client);
@@ -245,7 +245,7 @@ export const getSessionById = async (
         }
 
         res.status(200).json({
-            session: session.rows[0],
+            sessions: session.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -264,22 +264,24 @@ export const getSessionMembers = async (
     try {
         const { sessionId } = sessionIdSchema.parse(req.params);
 
-        const session = await query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
-
-        if (session.rowCount === 0) {
-            res.status(404).json({ message: 'Session not found' });
-            return;
-        }
-
         const sqlMembers = `
-            SELECT sm.role, sm.joined_at, u.id, u.name, u.avatar_url, u.rating_sum, u.rating_count
-            FROM session_members sm
-            INNER JOIN users u
+            SELECT s.id AS session_id, sm.role, sm.joined_at, u.id AS user_id, u.name, u.avatar_url, u.rating_sum, u.rating_count
+            FROM sessions s
+            LEFT JOIN session_members sm
+                ON s.id = sm.session_id
+            LEFT JOIN users u
                 ON sm.user_id = u.id
-            WHERE sm.session_id = $1
+            WHERE s.id = $1
         `;
 
         const sessionMembers = await query(sqlMembers, [sessionId]);
+
+        if (sessionMembers.rowCount === 0) {
+            res.status(404).json({
+                message: 'Session not found',
+            });
+            return;
+        }
 
         res.status(200).json({
             members: sessionMembers.rows,
@@ -371,7 +373,7 @@ export const joinSession = async (
         });
 
         res.status(201).json({
-            session_member: result.sessionMember,
+            members: result.sessionMember,
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -418,7 +420,9 @@ export const leaveSession = async (
         client = await pool.connect();
         await client.query('BEGIN');
 
-        const session = await client.query('SELECT id FROM sessions WHERE id = $1', [sessionId]);
+        const session = await client.query('SELECT id FROM sessions WHERE id = $1 FOR UPDATE', [
+            sessionId,
+        ]);
 
         if (session.rowCount === 0) {
             await errorTransaction(client);
@@ -580,7 +584,7 @@ export const sendSessionInvitation = async (
         req.io.to(`user_${receiverId}`).emit('new_notification', result);
 
         res.status(201).json({
-            sessionInvitation: sessionInvitation.rows[0],
+            invitations: sessionInvitation.rows[0],
             notifications: result,
         });
     } catch (error) {
@@ -704,8 +708,8 @@ export const acceptSessionInvitation = async (
         });
 
         res.status(200).json({
-            invitation: acceptedRequest.rows[0],
-            userMember: result.sessionMember,
+            invitations: acceptedRequest.rows[0],
+            members: result.sessionMember,
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -765,7 +769,7 @@ export const rejectSessionInvitation = async (
         }
 
         res.status(200).json({
-            rejectedRequest: rejectedRequest.rows[0],
+            invitations: rejectedRequest.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -792,7 +796,7 @@ export const getSessionsInvitations = async (
         }
 
         const sql = `
-            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.created_at, s.max_players, COUNT(sm.id) AS current_players, si.id
+            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.starts_at, s.max_players, COUNT(sm.id) AS current_players, si.id, si.created_at
             FROM session_invitations si
             INNER JOIN users u
                 ON si.sender_id = u.id
@@ -803,13 +807,13 @@ export const getSessionsInvitations = async (
             LEFT JOIN session_members sm
                 ON s.id = sm.session_id
             WHERE si.receiver_id = $1 AND si.status = 'pending' AND s.status = 'waiting'
-            GROUP BY si.id, u.name, g.name, s.title, s.max_players, s.created_at
+            GROUP BY si.id, u.name, g.name, s.title, s.max_players, s.starts_at
         `;
 
         const userInvitations = await query(sql, [userId]);
 
         res.status(200).json({
-            userInvitations: userInvitations.rows,
+            invitations: userInvitations.rows,
         });
     } catch (error) {
         next(error);
@@ -864,7 +868,7 @@ export const startSession = async (
         });
 
         res.status(200).json({
-            start: startSession.rows[0],
+            sessionStatus: startSession.rows[0],
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -914,7 +918,7 @@ export const completeSession = async (
         }
 
         res.status(200).json({
-            complete: completeSession.rows[0],
+            sessionStatus: completeSession.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -983,7 +987,7 @@ export const cancelSession = async (
 
         res.status(200).json({
             message: 'Session successfully cancelled',
-            cancel: cancelSession.rows[0],
+            sessionStatus: cancelSession.rows[0],
             notifications: result.membersNotifications,
         });
     } catch (error) {

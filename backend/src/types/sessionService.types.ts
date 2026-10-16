@@ -24,10 +24,10 @@ export interface NotificationResult {
     type: NotificationType;
     session_id: number | null;
     friendship_id: number | null;
-    read_at: null;
+    read_at: Date | null;
     created_at: Date;
-    name: string;
-    avatar_url: string;
+    name: string | null;
+    avatar_url: string | null;
 }
 
 export interface CreateNotificationParams {
