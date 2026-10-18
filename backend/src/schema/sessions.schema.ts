@@ -8,14 +8,14 @@ export const bodySchema = z.object({
     }),
     language: z.enum(['eng', 'ua']),
     micRequired: z.boolean(),
-    description: z.string().optional(),
+    description: z.string().trim().max(1000).optional(),
     rawg_id: z.number().int().positive(),
 });
 
 export const querySchema = z.object({
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),
-    search: z.string().trim().optional(),
+    search: z.string().trim().max(250).optional(),
     language: z.enum(['eng', 'ua']).optional(),
     sort: z
         .enum(['newest', 'oldest', 'soonest', 'latest', 'least-free', 'most-free'])

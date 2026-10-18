@@ -113,9 +113,9 @@ export const rateSessionMember = async (
         req.io.to(`user_${targetId}`).emit('new_notification', result);
 
         res.status(201).json({
-            rating: rating.rows[0],
-            user: user.rows[0],
-            notification: result,
+            ratings: rating.rows[0],
+            users: user.rows[0],
+            notifications: result,
         });
     } catch (error) {
         await errorTransaction(client);

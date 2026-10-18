@@ -28,7 +28,7 @@ export const getNotifications = async (
                 LEFT JOIN users u
                 ON n.actor_id = u.id
                 WHERE n.user_id = $1
-                ORDER BY n.created_at DESC
+                ORDER BY n.created_at DESC, n.id DESC
                 LIMIT $2
                 OFFSET $3
             `,

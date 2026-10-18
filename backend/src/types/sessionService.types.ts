@@ -8,6 +8,7 @@ export type NotificationType =
     | 'session_left'
     | 'session_started'
     | 'session_cancelled'
+    | 'session_completed'
     | 'new_rating';
 
 export interface SessionMemberResult {

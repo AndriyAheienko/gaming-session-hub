@@ -62,7 +62,11 @@ export const sendFriendRequest = async (
         }
 
         const friendship = await client.query(
-            'INSERT INTO friendships (sender_id, receiver_id) VALUES ($1, $2) RETURNING id, sender_id, receiver_id, status, created_at',
+            `
+                INSERT INTO friendships (sender_id, receiver_id)
+                VALUES ($1, $2)
+                RETURNING id, sender_id, receiver_id, status, created_at
+            `,
             [senderId, receiverId],
         );
 
@@ -198,7 +202,7 @@ export const rejectFriendRequest = async (
         }
 
         res.status(200).json({
-            request: rejectRequest.rows[0],
+            friendship: rejectRequest.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -226,7 +230,7 @@ export const getUserFriends = async (
 
         const friends = await query(
             `
-        SELECT u.id, u.name, u.rating_sum, u.avatar_url
+        SELECT u.id, u.name, u.rating_sum, u.rating_count, u.avatar_url, 
         FROM friendships f
         INNER JOIN users u
             ON (f.sender_id = $1 AND u.id = f.receiver_id)
@@ -277,7 +281,7 @@ export const deleteUserFriend = async (
 
         res.status(200).json({
             message: 'The user has been successfully removed from your friends list',
-            friend: deleteFriend.rows[0],
+            friendship: deleteFriend.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {

@@ -76,7 +76,7 @@ export const initDB = async () => {
             LEAST(sender_id, receiver_id),
             GREATEST(sender_id, receiver_id)
         )
-        WHERE status = 'pending';
+        WHERE status IN ('pending', 'accepted');
 
         -- session_invitations
         CREATE TABLE IF NOT EXISTS session_invitations (
@@ -124,6 +124,7 @@ export const initDB = async () => {
                 'session_left',
                 'session_started',
                 'session_cancelled',
+                'session_completed',
                 'new_rating'
             )),
             session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,

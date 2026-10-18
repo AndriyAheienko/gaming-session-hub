@@ -101,8 +101,8 @@ export const createSession = async (
         await client.query('COMMIT');
 
         res.status(201).json({
-            sessions: session.rows[0],
-            user: owner.rows[0],
+            session: session.rows[0],
+            member: owner.rows[0],
         });
     } catch (error) {
         await errorTransaction(client);
@@ -160,25 +160,25 @@ export const getSessions = async (
         let orderQuery = '';
         switch (reqQuery.sort) {
             case 'newest':
-                orderQuery += 'ORDER BY s.created_at DESC';
+                orderQuery += 'ORDER BY s.created_at DESC, s.id DESC';
                 break;
             case 'oldest':
-                orderQuery += 'ORDER BY s.created_at ASC';
+                orderQuery += 'ORDER BY s.created_at ASC, s.id DESC';
                 break;
             case 'soonest':
-                orderQuery += 'ORDER BY s.starts_at ASC';
+                orderQuery += 'ORDER BY s.starts_at ASC, s.id DESC';
                 break;
             case 'latest':
-                orderQuery += 'ORDER BY s.starts_at DESC';
+                orderQuery += 'ORDER BY s.starts_at DESC, s.id DESC';
                 break;
             case 'least-free':
-                orderQuery += 'ORDER BY current_players DESC';
+                orderQuery += 'ORDER BY current_players DESC, s.id DESC';
                 break;
             case 'most-free':
-                orderQuery += 'ORDER BY current_players ASC';
+                orderQuery += 'ORDER BY current_players ASC, s.id DESC';
                 break;
             default:
-                orderQuery = 'ORDER BY s.created_at DESC';
+                orderQuery = 'ORDER BY s.created_at DESC, s.id DESC';
                 break;
         }
 
@@ -245,7 +245,7 @@ export const getSessionById = async (
         }
 
         res.status(200).json({
-            sessions: session.rows[0],
+            session: session.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -373,7 +373,7 @@ export const joinSession = async (
         });
 
         res.status(201).json({
-            members: result.sessionMember,
+            member: result.sessionMember,
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -519,6 +519,7 @@ export const sendSessionInvitation = async (
             SELECT owner_id
             FROM sessions
             WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
+            FOR UPDATE 
         `;
 
         const sessionOwner = await client.query(sqlSessionExist, [sessionId, senderId]);
@@ -584,8 +585,8 @@ export const sendSessionInvitation = async (
         req.io.to(`user_${receiverId}`).emit('new_notification', result);
 
         res.status(201).json({
-            invitations: sessionInvitation.rows[0],
-            notifications: result,
+            invitation: sessionInvitation.rows[0],
+            notification: result,
         });
     } catch (error) {
         await errorTransaction(client);
@@ -708,8 +709,8 @@ export const acceptSessionInvitation = async (
         });
 
         res.status(200).json({
-            invitations: acceptedRequest.rows[0],
-            members: result.sessionMember,
+            invitation: acceptedRequest.rows[0],
+            member: result.sessionMember,
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -769,7 +770,7 @@ export const rejectSessionInvitation = async (
         }
 
         res.status(200).json({
-            invitations: rejectedRequest.rows[0],
+            invitation: rejectedRequest.rows[0],
         });
     } catch (error) {
         if (errorZod(res, error)) {
@@ -868,7 +869,7 @@ export const startSession = async (
         });
 
         res.status(200).json({
-            sessionStatus: startSession.rows[0],
+            session: startSession.rows[0],
             notifications: result.membersNotifications,
         });
     } catch (error) {
@@ -890,6 +891,7 @@ export const completeSession = async (
     next: NextFunction,
 ): Promise<void> => {
     const ownerId = req.user?.userId;
+    let client: PoolClient | null = null;
 
     try {
         if (!ownerId) {
@@ -901,7 +903,10 @@ export const completeSession = async (
 
         const { sessionId } = sessionIdSchema.parse(req.params);
 
-        const completeSession = await query(
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        const completeSession = await client.query(
             `
                 UPDATE sessions SET status = 'completed'
                 WHERE id = $1 AND owner_id = $2 AND status = 'active'
@@ -911,21 +916,34 @@ export const completeSession = async (
         );
 
         if (completeSession.rowCount === 0) {
+            await errorTransaction(client);
             res.status(409).json({
                 message: 'Unable to finish this session',
             });
             return;
         }
 
+        const result = await notifySessionMembers(client, sessionId, ownerId, 'session_completed');
+
+        await client.query('COMMIT');
+
+        result.membersNotifications.forEach(notification => {
+            req.io.to(`user_${notification.user_id}`).emit('new_notification', notification);
+        });
+
         res.status(200).json({
-            sessionStatus: completeSession.rows[0],
+            session: completeSession.rows[0],
         });
     } catch (error) {
+        await errorTransaction(client);
+
         if (errorZod(res, error)) {
             return;
         }
 
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -970,15 +988,6 @@ export const cancelSession = async (
 
         const result = await notifySessionMembers(client, sessionId, ownerId, 'session_cancelled');
 
-        await client.query(
-            `
-            DELETE FROM session_members 
-            WHERE session_id = $1
-            RETURNING id
-        `,
-            [sessionId],
-        );
-
         await client.query('COMMIT');
 
         result.membersNotifications.forEach(notification => {
@@ -987,7 +996,7 @@ export const cancelSession = async (
 
         res.status(200).json({
             message: 'Session successfully cancelled',
-            sessionStatus: cancelSession.rows[0],
+            session: cancelSession.rows[0],
             notifications: result.membersNotifications,
         });
     } catch (error) {
