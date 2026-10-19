@@ -6,7 +6,6 @@ import { createServer } from 'http';
 import { env } from './config/env.js';
 import { closePool } from './config/bd.js';
 import { socketHandler } from './sockets/socketHandler.js';
-import { initDB } from './models/initDB.js';
 
 import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
@@ -58,8 +57,6 @@ app.use(errorHandler);
 
 const startServer = async () => {
     try {
-        await initDB();
-
         const server = httpServer.listen(port, () => {
             console.log(`Server running on port ${env.PORT}`);
         });
@@ -84,6 +81,7 @@ const startServer = async () => {
                 await closePool();
 
                 console.log('Server shutdown completed');
+                process.exit(0);
             } catch (error) {
                 console.error('Error during server shutdown:', error);
                 process.exit(1);

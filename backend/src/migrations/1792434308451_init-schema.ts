@@ -1,9 +1,11 @@
-import { query } from '../config/bd.js';
+import type { MigrationBuilder, ColumnDefinitions } from 'node-pg-migrate';
 
-export const initDB = async () => {
-    const createTables = `
+export const shorthands: ColumnDefinitions | undefined = undefined;
+
+export async function up(pgm: MigrationBuilder): Promise<void> {
+    pgm.sql(`
         -- users
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE users (
             id SERIAL PRIMARY KEY,
             name VARCHAR(100) NOT NULL,
             email VARCHAR(200) NOT NULL,
@@ -17,7 +19,7 @@ export const initDB = async () => {
         );
 
         -- games
-        CREATE TABLE IF NOT EXISTS games (
+        CREATE TABLE games (
             id SERIAL PRIMARY KEY,
             rawg_id INTEGER UNIQUE,
             name VARCHAR(150) NOT NULL,
@@ -28,11 +30,11 @@ export const initDB = async () => {
         );
 
         -- sessions
-        CREATE TABLE IF NOT EXISTS sessions (
+        CREATE TABLE sessions (
             id SERIAL PRIMARY KEY,
             title VARCHAR(200) NOT NULL,
             game_id INTEGER NOT NULL REFERENCES games(id),
-            owner_id INTEGER NOT NULL REFERENCES users(id),
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             status VARCHAR(50) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed', 'cancelled')),
             max_players INTEGER NOT NULL CHECK (max_players BETWEEN 1 AND 100),
             starts_at TIMESTAMPTZ NOT NULL,
@@ -43,7 +45,7 @@ export const initDB = async () => {
         );
 
         -- session_members
-        CREATE TABLE IF NOT EXISTS session_members (
+        CREATE TABLE session_members (
             id SERIAL PRIMARY KEY,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -53,16 +55,16 @@ export const initDB = async () => {
         );
 
         -- messages
-        CREATE TABLE IF NOT EXISTS messages (
+        CREATE TABLE messages (
             id SERIAL PRIMARY KEY,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            sender_id INTEGER NOT NULL REFERENCES users(id),
+            sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             text TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         -- friendships
-        CREATE TABLE IF NOT EXISTS friendships (
+        CREATE TABLE friendships (
             id SERIAL PRIMARY KEY,
             sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -71,7 +73,7 @@ export const initDB = async () => {
         );
 
         -- INDEX friendships
-        CREATE UNIQUE INDEX IF NOT EXISTS unique_friendships_between_users
+        CREATE UNIQUE INDEX unique_friendships_between_users
         ON friendships (
             LEAST(sender_id, receiver_id),
             GREATEST(sender_id, receiver_id)
@@ -79,7 +81,7 @@ export const initDB = async () => {
         WHERE status IN ('pending', 'accepted');
 
         -- session_invitations
-        CREATE TABLE IF NOT EXISTS session_invitations (
+        CREATE TABLE session_invitations (
             id SERIAL PRIMARY KEY,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -89,7 +91,7 @@ export const initDB = async () => {
         );
 
         -- INDEX session_invitations
-        CREATE UNIQUE INDEX IF NOT EXISTS unique_pending_session_invitation
+        CREATE UNIQUE INDEX unique_pending_session_invitation
         ON session_invitations (
             session_id,
             sender_id,
@@ -98,10 +100,10 @@ export const initDB = async () => {
         WHERE status = 'pending';
 
         -- ratings
-        CREATE TABLE IF NOT EXISTS ratings (
+        CREATE TABLE ratings (
             id SERIAL PRIMARY KEY,
             rater_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            target_id INTEGER NOT NULL REFERENCES users(id),
+            target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             rating INTEGER NOT NULL,
             CHECK (rating BETWEEN 1 AND 5),
@@ -111,8 +113,8 @@ export const initDB = async () => {
             CONSTRAINT unique_rating_per_session UNIQUE (session_id, rater_id, target_id)
         );
 
-        --notifications
-        CREATE TABLE IF NOT EXISTS notifications (
+        -- notifications
+        CREATE TABLE notifications (
             id SERIAL PRIMARY KEY,
             actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -131,14 +133,20 @@ export const initDB = async () => {
             friendship_id INTEGER REFERENCES friendships(id) ON DELETE SET NULL,
             read_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
+        );
+    `);
+}
 
-    try {
-        await query(createTables);
-        console.log('The databases have been successfully created and verified');
-    } catch (error) {
-        console.error('Error initializing the database:', error);
-        throw error;
-    }
-};
+export async function down(pgm: MigrationBuilder): Promise<void> {
+    pgm.sql(`
+        DROP TABLE IF EXISTS notifications CASCADE;
+        DROP TABLE IF EXISTS ratings CASCADE;
+        DROP TABLE IF EXISTS session_invitations CASCADE;
+        DROP TABLE IF EXISTS friendships CASCADE;
+        DROP TABLE IF EXISTS messages CASCADE;
+        DROP TABLE IF EXISTS session_members CASCADE;
+        DROP TABLE IF EXISTS sessions CASCADE;
+        DROP TABLE IF EXISTS games CASCADE;
+        DROP TABLE IF EXISTS users CASCADE;
+    `);
+}
