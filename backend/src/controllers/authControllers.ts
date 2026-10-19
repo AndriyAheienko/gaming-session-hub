@@ -88,24 +88,28 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }
 };
 
-export const getMyInfo = async (req: Request, res: Response): Promise<void> => {
+export const getMyInfo = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.user?.userId;
 
-    if (!userId) {
-        res.status(401).json({
-            message: 'The user does not have access to perform this operation',
+    try {
+        if (!userId) {
+            res.status(401).json({
+                message: 'The user does not have access to perform this operation',
+            });
+            return;
+        }
+
+        const user = await query('SELECT id, name, email FROM users WHERE id = $1', [userId]);
+
+        if (user.rowCount === 0) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        res.status(200).json({
+            user: user.rows[0],
         });
-        return;
+    } catch (error) {
+        next(error);
     }
-
-    const user = await query('SELECT id, name, email FROM users WHERE id = $1', [userId]);
-
-    if (user.rowCount === 0) {
-        res.status(404).json({ message: 'User not found' });
-        return;
-    }
-
-    res.status(200).json({
-        user: user.rows[0],
-    });
 };

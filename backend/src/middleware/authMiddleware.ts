@@ -1,11 +1,10 @@
-import type { Response, NextFunction } from 'express';
-import type { AuthRequest } from '../types/express.types.js';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { jwtPayloadSchema, authSchema } from '../schema/auth.schema.js';
 import z from 'zod';
 
-export const protect = (req: AuthRequest, res: Response, next: NextFunction): void => {
+export const protect = (req: Request, res: Response, next: NextFunction): void => {
     let payload: { userId: number };
 
     try {

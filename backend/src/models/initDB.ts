@@ -100,7 +100,7 @@ export const initDB = async () => {
         -- ratings
         CREATE TABLE IF NOT EXISTS ratings (
             id SERIAL PRIMARY KEY,
-            rater_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            rater_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             target_id INTEGER NOT NULL REFERENCES users(id),
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             rating INTEGER NOT NULL,

@@ -6,6 +6,7 @@ import { createServer } from 'http';
 import { env } from './config/env.js';
 import { closePool } from './config/bd.js';
 import { socketHandler } from './sockets/socketHandler.js';
+import { initDB } from './models/initDB.js';
 
 import authRoutes from './routes/authRoutes.js';
 import sessionsRoutes from './routes/sessionsRoutes.js';
@@ -55,31 +56,46 @@ app.use((_req: Request, res: Response) => {
 
 app.use(errorHandler);
 
-const server = httpServer.listen(port, () => {
-    console.log(`Server running on port ${env.PORT}`);
-});
-
-const shutdown = async () => {
+const startServer = async () => {
     try {
-        await new Promise<void>((resolve, reject) => {
-            server.close(error => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
+        await initDB();
 
-                resolve();
-            });
+        const server = httpServer.listen(port, () => {
+            console.log(`Server running on port ${env.PORT}`);
         });
 
-        await closePool();
+        const shutdown = async () => {
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    io.close(error => {
+                        if (error) console.error('Socket close error', error);
+                    });
 
-        console.log('Server shutdown completed');
+                    server.close(error => {
+                        if (error) {
+                            reject(error);
+                            return;
+                        }
+
+                        resolve();
+                    });
+                });
+
+                await closePool();
+
+                console.log('Server shutdown completed');
+            } catch (error) {
+                console.error('Error during server shutdown:', error);
+                process.exit(1);
+            }
+        };
+
+        process.on('SIGTERM', shutdown);
+        process.on('SIGINT', shutdown);
     } catch (error) {
-        console.error('Error during server shutdown:', error);
+        console.error('Failed to start the server:', error);
         process.exit(1);
     }
 };
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+startServer();

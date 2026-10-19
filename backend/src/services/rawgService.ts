@@ -6,9 +6,13 @@ const baseUrl = 'https://api.rawg.io/api';
 
 export const getGames = async (searchQuery: string, pageSize: number = 10): Promise<RawgGame[]> => {
     try {
-        const url = `${baseUrl}/games?key=${env.RAWG_API_KEY}&search=${searchQuery}&page_size=${pageSize}`;
+        const url = new URL(`${baseUrl}/games`);
 
-        const response = await fetch(url);
+        url.searchParams.set('key', env.RAWG_API_KEY);
+        url.searchParams.set('search', searchQuery);
+        url.searchParams.set('page_size', pageSize.toString());
+
+        const response = await fetch(url.toString());
 
         if (!response.ok) {
             throw new Error('Error to load rawg games');

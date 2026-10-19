@@ -172,10 +172,10 @@ export const getSessions = async (
                 orderQuery += 'ORDER BY s.starts_at DESC, s.id DESC';
                 break;
             case 'least-free':
-                orderQuery += 'ORDER BY current_players DESC, s.id DESC';
+                orderQuery += 'ORDER BY s.max_players - COUNT(sm.id) ASC, s.id DESC';
                 break;
             case 'most-free':
-                orderQuery += 'ORDER BY current_players ASC, s.id DESC';
+                orderQuery += 'ORDER BY s.max_players - COUNT(sm.id) DESC, s.id DESC';
                 break;
             default:
                 orderQuery = 'ORDER BY s.created_at DESC, s.id DESC';
@@ -328,7 +328,7 @@ export const joinSession = async (
 
         if (session.rowCount === 0) {
             await errorTransaction(client);
-            res.status(404).json({ message: 'Session not found' });
+            res.status(404).json({ message: 'Session not found or no longer available' });
             return;
         }
 
@@ -644,9 +644,7 @@ export const acceptSessionInvitation = async (
 
         if (invitation.rowCount === 0) {
             await errorTransaction(client);
-            res.status(404).json({
-                message: 'Invitation not found',
-            });
+            res.status(404).json({ message: 'Pending invitation not found' });
             return;
         }
 
@@ -765,7 +763,7 @@ export const rejectSessionInvitation = async (
         const rejectedRequest = await query(sql, [userId, invitationId]);
 
         if (rejectedRequest.rowCount === 0) {
-            res.status(409).json({ message: 'Failed to reject invite request in session' });
+            res.status(404).json({ message: 'Pending invitation not found' });
             return;
         }
 
@@ -843,22 +841,43 @@ export const startSession = async (
         client = await pool.connect();
         await client.query('BEGIN');
 
-        const startSession = await client.query(
-            `
-                UPDATE sessions SET status = 'active'
-                WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
-                RETURNING id, status
-            `,
-            [sessionId, ownerId],
+        const session = await client.query(
+            'SELECT id, owner_id, status FROM sessions WHERE id = $1',
+            [sessionId],
         );
 
-        if (startSession.rowCount === 0) {
+        if (session.rowCount === 0) {
             await errorTransaction(client);
-            res.status(409).json({
-                message: 'Unable to start this session',
+            res.status(404).json({
+                message: 'Session not found',
             });
             return;
         }
+
+        if (ownerId !== session.rows[0].owner_id) {
+            await errorTransaction(client);
+            res.status(403).json({
+                message: 'You are not the owner of the session',
+            });
+            return;
+        }
+
+        if (session.rows[0].status !== 'waiting') {
+            await errorTransaction(client);
+            res.status(409).json({
+                message: 'The session is no longer in a pending-start status',
+            });
+            return;
+        }
+
+        const startSession = await client.query(
+            `
+            UPDATE sessions SET status = 'active'
+            WHERE id = $1 AND owner_id = $2 AND status = 'waiting'
+            RETURNING id, status
+        `,
+            [sessionId, ownerId],
+        );
 
         const result = await notifySessionMembers(client, sessionId, ownerId, 'session_started');
 
@@ -906,6 +925,35 @@ export const completeSession = async (
         client = await pool.connect();
         await client.query('BEGIN');
 
+        const session = await client.query(
+            'SELECT id, owner_id, status FROM sessions WHERE id = $1',
+            [sessionId],
+        );
+
+        if (session.rowCount === 0) {
+            await errorTransaction(client);
+            res.status(404).json({
+                message: 'Session not found',
+            });
+            return;
+        }
+
+        if (ownerId !== session.rows[0].owner_id) {
+            await errorTransaction(client);
+            res.status(403).json({
+                message: 'You are not the owner of the session',
+            });
+            return;
+        }
+
+        if (session.rows[0].status !== 'active') {
+            await errorTransaction(client);
+            res.status(409).json({
+                message: 'The session is not in an active status for completion',
+            });
+            return;
+        }
+
         const completeSession = await client.query(
             `
                 UPDATE sessions SET status = 'completed'
@@ -914,14 +962,6 @@ export const completeSession = async (
             `,
             [sessionId, ownerId],
         );
-
-        if (completeSession.rowCount === 0) {
-            await errorTransaction(client);
-            res.status(409).json({
-                message: 'Unable to finish this session',
-            });
-            return;
-        }
 
         const result = await notifySessionMembers(client, sessionId, ownerId, 'session_completed');
 
@@ -969,6 +1009,35 @@ export const cancelSession = async (
         client = await pool.connect();
         await client.query('BEGIN');
 
+        const session = await client.query(
+            'SELECT id, owner_id, status FROM sessions WHERE id = $1',
+            [sessionId],
+        );
+
+        if (session.rowCount === 0) {
+            await errorTransaction(client);
+            res.status(404).json({
+                message: 'Session not found',
+            });
+            return;
+        }
+
+        if (ownerId !== session.rows[0].owner_id) {
+            await errorTransaction(client);
+            res.status(403).json({
+                message: 'You are not the owner of the session',
+            });
+            return;
+        }
+
+        if (session.rows[0].status !== 'waiting' && session.rows[0].status !== 'active') {
+            await errorTransaction(client);
+            res.status(409).json({
+                message: 'The session has already been either completed or cancelled',
+            });
+            return;
+        }
+
         const cancelSession = await client.query(
             `
                 UPDATE sessions SET status = 'cancelled'
@@ -977,14 +1046,6 @@ export const cancelSession = async (
             `,
             [sessionId, ownerId],
         );
-
-        if (cancelSession.rowCount === 0) {
-            await errorTransaction(client);
-            res.status(409).json({
-                message: 'Failed to cancel the current session',
-            });
-            return;
-        }
 
         const result = await notifySessionMembers(client, sessionId, ownerId, 'session_cancelled');
 

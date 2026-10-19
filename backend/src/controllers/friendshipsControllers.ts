@@ -139,7 +139,7 @@ export const acceptFriendRequest = async (
 
         if (acceptRequest.rowCount === 0) {
             await errorTransaction(client);
-            res.status(400).json({ message: 'Failed to accept the friend request' });
+            res.status(404).json({ message: 'Pending friend request not found' });
             return;
         }
 
@@ -197,7 +197,7 @@ export const rejectFriendRequest = async (
         const rejectRequest = await query(sql, [friendshipId, userId]);
 
         if (rejectRequest.rowCount === 0) {
-            res.status(400).json({ message: 'Failed to reject the friend request' });
+            res.status(404).json({ message: 'Pending friend request not found' });
             return;
         }
 
@@ -230,7 +230,7 @@ export const getUserFriends = async (
 
         const friends = await query(
             `
-        SELECT u.id, u.name, u.rating_sum, u.rating_count, u.avatar_url, 
+        SELECT u.id, u.name, u.rating_sum, u.rating_count, u.avatar_url
         FROM friendships f
         INNER JOIN users u
             ON (f.sender_id = $1 AND u.id = f.receiver_id)
@@ -275,7 +275,7 @@ export const deleteUserFriend = async (
         );
 
         if (deleteFriend.rowCount === 0) {
-            res.status(400).json({ message: 'Failed to remove the friend' });
+            res.status(404).json({ message: 'Could not find this user in your friends list' });
             return;
         }
 
