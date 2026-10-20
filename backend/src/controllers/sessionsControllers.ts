@@ -74,7 +74,7 @@ export const createSession = async (
         const sql = `
             INSERT INTO sessions (title, game_id, max_players, starts_at, language, mic_required, description, owner_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id, title, game_id, max_players, starts_at, language, mic_required, description, owner_id
+            RETURNING id, title, game_id, max_players, starts_at, language, mic_required, description, owner_id, status, created_at
         `;
 
         const session = await client.query(sql, [
@@ -192,7 +192,8 @@ export const getSessions = async (
         const offsetIndex = paramIndex;
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            ${baseQuery}
             ${baseQuery}
             GROUP BY s.id, g.name, u.id, u.name
             ${availableSql}
@@ -225,7 +226,7 @@ export const getSessionById = async (
         const { sessionId } = sessionIdSchema.parse(req.params);
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             FROM sessions s
             INNER JOIN games g
                 ON s.game_id = g.id

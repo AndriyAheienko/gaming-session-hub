@@ -34,7 +34,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
             id SERIAL PRIMARY KEY,
             title VARCHAR(200) NOT NULL,
             game_id INTEGER NOT NULL REFERENCES games(id),
-            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed', 'cancelled')),
             max_players INTEGER NOT NULL CHECK (max_players BETWEEN 1 AND 100),
             starts_at TIMESTAMPTZ NOT NULL,

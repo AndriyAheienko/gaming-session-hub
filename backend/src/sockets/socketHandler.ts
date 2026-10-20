@@ -17,7 +17,10 @@ export const socketHandler = (httpServer: HttpServer): Server => {
 
     io.use((socket: Socket, next) => {
         try {
-            const token = authSchema.parse(socket.handshake.auth.token);
+            const rawToken =
+                socket.handshake.auth?.token || socket.handshake.headers?.authorization;
+
+            const token = authSchema.parse(rawToken);
 
             const decoded = jwt.verify(token, env.JWT_SECRET);
 
