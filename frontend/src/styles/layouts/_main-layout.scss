@@ -1,0 +1,25 @@
+@use '../utils/mixins' as *;
+@use '../utils/variables' as *;
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background-color: $bg-app;
+}
+
+.main-container {
+    @include container;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+body {
+    font-size: 1.1rem;
+    font-family: $font-main;
+    color: $text-main;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

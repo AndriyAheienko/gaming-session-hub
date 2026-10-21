@@ -1,0 +1,35 @@
+@use './variables' as *;
+
+@mixin tablet {
+    @media (min-width: $bp-tablet) {
+        @content;
+    }
+}
+
+@mixin large-tablet {
+    @media (min-width: $bp-large-tablet) {
+        @content;
+    }
+}
+@mixin desktop {
+    @media (min-width: $bp-desktop) {
+        @content;
+    }
+}
+
+@mixin large-desktop {
+    @media (min-width: $bp-large-desktop) {
+        @content;
+    }
+}
+
+@mixin container {
+    max-width: 1440px;
+    padding: 0 12px;
+    width: 100%;
+    margin: 0 auto;
+
+    @include tablet {
+        padding: 0 24px;
+    }
+}
