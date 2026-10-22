@@ -1,8 +1,18 @@
 //background
 $bg-app: #11131b;
+$bg-surface: #161925;
 
 //text
 $text-main: #f8fafc;
+$text-secondary: #94a3b8;
+
+// accents
+$accent-main: #10b981;
+$accent-transparent: rgba(16, 185, 129, 0.1);
+
+// borders & effects
+$border-light: rgba(255, 255, 255, 0.05);
+$hover-light: rgba(255, 255, 255, 0.05);
 
 //breakpoints
 $bp-tablet: 768px;

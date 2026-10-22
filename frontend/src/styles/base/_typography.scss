@@ -1,7 +1,30 @@
-@use '@fontsource/inter/400.css';
-@use '@fontsource/inter/500.css';
-@use '@fontsource/inter/600.css';
+@use '../utils/variables' as *;
 
-@use '@fontsource/rajdhani/500.css';
-@use '@fontsource/rajdhani/600.css';
-@use '@fontsource/rajdhani/700.css';
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: $font-accent;
+}
+
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
+    font-size: inherit;
+}
+
+address {
+    font-style: normal;
+}
+
+body {
+    font-size: 1.1rem;
+    font-family: $font-main;
+    color: $text-main;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

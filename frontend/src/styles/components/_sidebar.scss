@@ -1,0 +1,57 @@
+@use '../utils/mixins' as *;
+@use '../utils/variables' as *;
+
+.sidebar {
+    display: none;
+    width: 240px;
+    background-color: $bg-surface;
+    border-right: 1px solid $border-light;
+    flex-direction: column;
+    padding: 24px 16px;
+
+    @include tablet {
+        display: flex;
+    }
+
+    &__logo {
+        font-family: $font-accent;
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 40px;
+        padding-left: 12px;
+
+        .logo-accent {
+            color: $accent-main;
+        }
+    }
+
+    &__nav {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    color: $text-secondary;
+    text-decoration: none;
+    transition:
+        background 0.2s ease,
+        color 0.2s ease;
+    font-weight: 500;
+
+    &:hover {
+        background-color: $hover-light;
+        color: $text-main;
+    }
+
+    &--active {
+        background-color: $accent-transparent;
+        color: $accent-main;
+    }
+}

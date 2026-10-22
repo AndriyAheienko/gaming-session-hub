@@ -1,0 +1,15 @@
+@use '../utils/mixins' as *;
+@use '../utils/variables' as *;
+
+.header {
+    height: 64px;
+    border-bottom: 1px solid $border-light;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    padding: 0 16px;
+
+    @include tablet {
+        padding: 0 32px;
+    }
+}

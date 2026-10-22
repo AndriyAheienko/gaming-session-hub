@@ -1,0 +1,31 @@
+@use '../utils/mixins' as *;
+@use '../utils/variables' as *;
+
+.mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background-color: $bg-surface;
+    border-top: 1px solid $border-light;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 50;
+
+    @include tablet {
+        display: none;
+    }
+
+    &__item {
+        color: $text-secondary;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: color 0.2s ease;
+
+        &--active {
+            color: $accent-main;
+        }
+    }
+}

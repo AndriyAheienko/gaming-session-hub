@@ -192,15 +192,13 @@ export const getSessions = async (
         const offsetIndex = paramIndex;
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             ${baseQuery}
-            ${baseQuery}
-            GROUP BY s.id, g.name, u.id, u.name
+            GROUP BY s.id, g.id, u.id
             ${availableSql}
             ${orderQuery}
             LIMIT $${limitIndex}
             OFFSET $${offsetIndex}
-
         `;
 
         const sessions = await query(sql, mainValues);
@@ -226,7 +224,7 @@ export const getSessionById = async (
         const { sessionId } = sessionIdSchema.parse(req.params);
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.created_at, g.name AS game_name, u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
             FROM sessions s
             INNER JOIN games g
                 ON s.game_id = g.id
@@ -235,7 +233,7 @@ export const getSessionById = async (
             LEFT JOIN session_members sm
                 ON s.id = sm.session_id
             WHERE s.id = $1
-            GROUP BY s.id, g.name, u.id, u.name
+            GROUP BY s.id, g.id, u.id
         `;
 
         const session = await query(sql, [sessionId]);
