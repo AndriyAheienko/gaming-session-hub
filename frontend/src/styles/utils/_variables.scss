@@ -1,17 +1,19 @@
 //background
-$bg-app: #11131b;
-$bg-surface: #161925;
+$bg-app: #121212;
+$bg-surface: #1e1e1e;
+$bg-elevated: #282828;
 
 //text
-$text-main: #f8fafc;
-$text-secondary: #94a3b8;
+$text-main: #f3f4f6;
+$text-secondary: #9ca3af;
 
 // accents
-$accent-main: #10b981;
-$accent-transparent: rgba(16, 185, 129, 0.1);
+$accent-main: #eab308;
+$accent-hover: #facc15;
+$accent-transparent: rgba(234, 179, 8, 0.15);
 
 // borders & effects
-$border-light: rgba(255, 255, 255, 0.05);
+$border-light: rgba(255, 255, 255, 0.08);
 $hover-light: rgba(255, 255, 255, 0.05);
 
 //breakpoints

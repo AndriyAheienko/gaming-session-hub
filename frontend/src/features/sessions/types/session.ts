@@ -1,19 +1,19 @@
-type Status = 'waiting' | 'active' | 'completed' | 'cancelled';
-type Language = 'eng' | 'ua';
+export type SessionStatus = 'waiting' | 'active' | 'completed' | 'cancelled';
+export type SessionLanguage = 'eng' | 'ua';
 
 export interface Session {
     id: number;
     title: string;
     max_players: number;
-    status: Status;
+    status: SessionStatus;
     starts_at: string;
-    language: Language;
+    language: SessionLanguage;
     mic_required: boolean;
     created_at: string;
-    description: string;
+    description: string | null;
     game_name: string;
-    background_image: string;
-    owner_id: number;
-    owner_name: string;
+    background_image: string | null;
+    owner_id: number | null;
+    owner_name: string | null;
     current_players: number;
 }

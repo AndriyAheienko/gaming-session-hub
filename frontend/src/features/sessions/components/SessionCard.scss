@@ -13,7 +13,7 @@
         transform 0.2s ease;
 
     &:hover {
-        border-color: rgba(139, 92, 246, 0.45);
+        border-color: $accent-main;
         transform: translateY(-2px);
     }
 
@@ -48,21 +48,21 @@
         left: 12px;
         padding: 5px 9px;
         border-radius: 6px;
-        background-color: rgba(17, 19, 27, 0.88);
+        background-color: rgba(18, 18, 18, 0.88);
         font-size: 0.75rem;
         font-weight: 600;
 
         &--waiting {
-            color: #34d399;
+            color: $accent-main;
         }
 
         &--active {
-            color: #fbbf24;
+            color: $text-main;
         }
 
         &--completed,
         &--cancelled {
-            color: #94a3b8;
+            color: $text-secondary;
         }
     }
 
@@ -94,6 +94,7 @@
         overflow: hidden;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
+        line-clamp: 2;
         color: $text-secondary;
         font-size: 0.9rem;
         line-height: 1.5;
@@ -126,19 +127,19 @@
         padding: 11px 14px;
         border-radius: 8px;
         background-color: $accent-main;
-        color: #fff;
+        color: $bg-app;
         font: inherit;
         font-size: 0.9rem;
-        font-weight: 600;
+        font-weight: 700;
         cursor: pointer;
         transition: background-color 0.2s ease;
 
         &:hover:not(:disabled) {
-            background-color: #7c3aed;
+            background-color: $accent-hover;
         }
 
         &:focus-visible {
-            outline: 2px solid #c4b5fd;
+            outline: 2px solid $accent-hover;
             outline-offset: 3px;
         }
 
@@ -146,5 +147,22 @@
             opacity: 0.45;
             cursor: not-allowed;
         }
+    }
+
+    &__footer-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    &__host {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: $accent-main;
+        font-size: 0.8rem;
+        font-weight: 500;
     }
 }

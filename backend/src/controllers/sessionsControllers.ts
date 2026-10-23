@@ -192,7 +192,7 @@ export const getSessions = async (
         const offsetIndex = paramIndex;
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id)::int AS current_players
             ${baseQuery}
             GROUP BY s.id, g.id, u.id
             ${availableSql}
@@ -224,7 +224,7 @@ export const getSessionById = async (
         const { sessionId } = sessionIdSchema.parse(req.params);
 
         const sql = `
-            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id) AS current_players
+            SELECT s.id, s.title, s.max_players, s.status, s.starts_at, s.language, s.mic_required, s.description, s.created_at, g.name AS game_name, g.background_image , u.id AS owner_id, u.name AS owner_name, COUNT(sm.id)::int AS current_players
             FROM sessions s
             INNER JOIN games g
                 ON s.game_id = g.id
