@@ -1,5 +1,6 @@
 export type SessionStatus = 'waiting' | 'active' | 'completed' | 'cancelled';
 export type SessionLanguage = 'eng' | 'ua';
+export type SessionSort = 'newest' | 'oldest' | 'soonest' | 'latest' | 'least-free' | 'most-free';
 
 export interface Session {
     id: number;
@@ -16,4 +17,8 @@ export interface Session {
     owner_id: number | null;
     owner_name: string | null;
     current_players: number;
+}
+
+export interface GetSessionsResponse {
+    sessions: Session[];
 }

@@ -41,11 +41,11 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
     next();
 });
 
-app.use('/auth', authRoutes);
-app.use('/sessions', sessionsRoutes);
-app.use('/friends', friendsRoutes);
-app.use('/games', gamesRoutes);
-app.use('/notifications', notificationsRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/sessions', sessionsRoutes);
+app.use('/api/friends', friendsRoutes);
+app.use('/api/games', gamesRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 app.use((_req: Request, res: Response) => {
     res.status(404).json({

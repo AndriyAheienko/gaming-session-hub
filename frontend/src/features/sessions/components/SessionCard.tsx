@@ -5,7 +5,7 @@ import './SessionCard.scss';
 
 type SessionCardProps = {
     session: Session;
-    onSelect: (sessionId: number) => void;
+    // onSelect: (sessionId: number) => void;
 };
 
 const statusLabels: Record<SessionStatus, string> = {
@@ -20,7 +20,7 @@ const languageLabels: Record<SessionLanguage, string> = {
     ua: 'Ukrainian',
 };
 
-const SessionCard = ({ session, onSelect }: SessionCardProps) => {
+const SessionCard = ({ session }: SessionCardProps) => {
     const currentPlayers = Number(session.current_players);
     const isFull = currentPlayers >= session.max_players;
 
@@ -94,7 +94,7 @@ const SessionCard = ({ session, onSelect }: SessionCardProps) => {
                     className="session-card__action"
                     type="button"
                     disabled={isFull}
-                    onClick={() => onSelect(session.id)}
+                    // onClick={() => onSelect(session.id)}
                 >
                     {isFull ? 'The session is full' : 'Join a session'}
                 </button>
