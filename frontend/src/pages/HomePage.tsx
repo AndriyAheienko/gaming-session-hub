@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSessions } from '../features/sessions/services/sessionApi';
 import type { Session } from '../features/sessions/types/session';
 import { useDebounce } from '../hooks/useDebounce';
 import SessionCard from '../features/sessions/components/SessionCard';
 import axios from 'axios';
+import type { SessionSort } from '../features/sessions/types/session';
+import { ArrowDown } from 'lucide-react';
+import { useOutsideClick } from '../hooks/useOutsideClick';
+
+interface Sort {
+    id: number;
+    title: string;
+    sort: SessionSort;
+}
 
 const HomePage = () => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -11,7 +20,24 @@ const HomePage = () => {
     const [error, setError] = useState<string>('');
     const [loader, setLoader] = useState<boolean>(false);
 
+    const [sortBy, setsortBy] = useState<SessionSort>('newest');
+    const [isOpen, setIsOpen] = useState(false);
+
     const debounceSearchTerm = useDebounce(search, 500);
+    const sortRef = useRef<HTMLDivElement>(null);
+    const closeSort = useCallback(() => {
+        setIsOpen(false);
+    }, []);
+    useOutsideClick(sortRef, closeSort);
+
+    const sorts: Sort[] = [
+        { id: 1, title: 'Newest', sort: 'newest' },
+        { id: 2, title: 'Oldest', sort: 'oldest' },
+        { id: 3, title: 'Soonest', sort: 'soonest' },
+        { id: 4, title: 'Latest', sort: 'latest' },
+        { id: 5, title: 'least-free', sort: 'least-free' },
+        { id: 6, title: 'most-free', sort: 'most-free' },
+    ];
 
     useEffect(() => {
         const controller = new AbortController();
@@ -25,7 +51,7 @@ const HomePage = () => {
                     {
                         page: 1,
                         limit: 10,
-                        sort: 'newest',
+                        sort: sortBy,
                         search: debounceSearchTerm,
                         available: false,
                         language: 'eng',
@@ -56,11 +82,35 @@ const HomePage = () => {
         getAllSessions();
 
         return () => controller.abort();
-    }, [debounceSearchTerm]);
+    }, [debounceSearchTerm, sortBy]);
 
     return (
         <div>
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="sort" ref={sortRef}>
+                <div
+                    className="sort-container"
+                    onClick={e => {
+                        setIsOpen(true);
+                        e.stopPropagation();
+                    }}
+                >
+                    <p>{sorts.find(s => s.sort === sortBy)?.title}</p>
+                    <ArrowDown />
+                </div>
+                {isOpen &&
+                    sorts.map(sort => (
+                        <div
+                            key={sort.id}
+                            onClick={() => {
+                                setsortBy(sort.sort);
+                                setIsOpen(false);
+                            }}
+                        >
+                            {sort.title}
+                        </div>
+                    ))}
+            </div>
             <div>
                 <div>
                     {error && <div>{error}</div>}
