@@ -1,6 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 import api from '../../../services/api';
-import type { Session, SessionSort, SessionLanguage, GetSessionsResponse } from '../types/session';
+import type { SessionSort, SessionLanguage, GetSessionsResponse } from '../types/session';
 
 export const getSessions = async (
     params: {
@@ -9,14 +9,14 @@ export const getSessions = async (
         sort: SessionSort;
         search: string;
         available: boolean;
-        language: SessionLanguage;
+        language?: SessionLanguage;
     },
     config?: AxiosRequestConfig,
-): Promise<Session[]> => {
+): Promise<GetSessionsResponse> => {
     const { data } = await api.get<GetSessionsResponse>('/sessions', {
         ...config,
         params,
     });
 
-    return data.sessions;
+    return data;
 };

@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSessions } from '../features/sessions/services/sessionApi';
-import type { Session } from '../features/sessions/types/session';
+import type { Session, SessionLanguage } from '../features/sessions/types/session';
 import { useDebounce } from '../hooks/useDebounce';
 import SessionCard from '../features/sessions/components/SessionCard';
 import axios from 'axios';
 import type { SessionSort } from '../features/sessions/types/session';
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useOutsideClick } from '../hooks/useOutsideClick';
 
 interface Sort {
@@ -14,21 +14,49 @@ interface Sort {
     sort: SessionSort;
 }
 
+interface Language {
+    id: number;
+    title: string;
+    lang: SessionLanguage | undefined;
+}
+
 const HomePage = () => {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [search, setSearch] = useState<string>('');
     const [error, setError] = useState<string>('');
     const [loader, setLoader] = useState<boolean>(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [btnLoader, setBtnLoader] = useState(false);
 
-    const [sortBy, setsortBy] = useState<SessionSort>('newest');
-    const [isOpen, setIsOpen] = useState(false);
+    const [sortBy, setSortBy] = useState<SessionSort>('newest');
+    const [isSortOpen, setIsSortOpen] = useState(false);
+
+    const [available, setAvailable] = useState(false);
+
+    const [isLangOpen, setIsLangOpen] = useState(false);
+    const [language, setLanguage] = useState<SessionLanguage | undefined>(undefined);
+    const langRef = useRef<HTMLDivElement>(null);
 
     const debounceSearchTerm = useDebounce(search, 500);
+    const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setPage(1);
+        setSearch(e.target.value);
+    };
+
     const sortRef = useRef<HTMLDivElement>(null);
+
     const closeSort = useCallback(() => {
-        setIsOpen(false);
+        setIsSortOpen(false);
     }, []);
+
     useOutsideClick(sortRef, closeSort);
+
+    const closeLang = useCallback(() => {
+        setIsLangOpen(false);
+    }, []);
+
+    useOutsideClick(langRef, closeLang);
 
     const sorts: Sort[] = [
         { id: 1, title: 'Newest', sort: 'newest' },
@@ -39,26 +67,50 @@ const HomePage = () => {
         { id: 6, title: 'most-free', sort: 'most-free' },
     ];
 
+    const languages: Language[] = [
+        { id: 1, title: 'All', lang: undefined },
+        { id: 2, title: 'English', lang: 'eng' },
+        { id: 3, title: 'Ukrainian', lang: 'ua' },
+    ];
+
     useEffect(() => {
         const controller = new AbortController();
 
         const getAllSessions = async () => {
-            setLoader(true);
             setError('');
 
+            if (page === 1) {
+                setLoader(true);
+            } else {
+                setBtnLoader(true);
+            }
+
             try {
-                const sessionList = await getSessions(
+                const result = await getSessions(
                     {
-                        page: 1,
+                        page,
                         limit: 10,
                         sort: sortBy,
                         search: debounceSearchTerm,
-                        available: false,
-                        language: 'eng',
+                        available,
+                        language,
                     },
                     { signal: controller.signal },
                 );
-                setSessions(sessionList);
+
+                setHasMore(result.hasMore);
+
+                if (page === 1) {
+                    setSessions(result.sessions);
+                } else {
+                    setSessions(prev => {
+                        const newSessions = result.sessions.filter(
+                            newSession =>
+                                !prev.some(prevSession => prevSession.id === newSession.id),
+                        );
+                        return [...prev, ...newSessions];
+                    });
+                }
             } catch (error) {
                 if (axios.isCancel(error)) {
                     return;
@@ -75,6 +127,7 @@ const HomePage = () => {
             } finally {
                 if (!controller.signal.aborted) {
                     setLoader(false);
+                    setBtnLoader(false);
                 }
             }
         };
@@ -82,36 +135,59 @@ const HomePage = () => {
         getAllSessions();
 
         return () => controller.abort();
-    }, [debounceSearchTerm, sortBy]);
+    }, [debounceSearchTerm, sortBy, available, language, page]);
 
     return (
         <div>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} />
+            <input type="text" value={search} onChange={handleSearch} />
             <div className="sort" ref={sortRef}>
-                <div
-                    className="sort-container"
-                    onClick={e => {
-                        setIsOpen(true);
-                        e.stopPropagation();
-                    }}
-                >
+                <div className="sort-container" onClick={() => setIsSortOpen(prev => !prev)}>
                     <p>{sorts.find(s => s.sort === sortBy)?.title}</p>
-                    <ArrowDown />
+                    {!isSortOpen ? <ArrowDown /> : <ArrowUp />}
                 </div>
-                {isOpen &&
+                {isSortOpen &&
                     sorts.map(sort => (
                         <div
                             key={sort.id}
                             onClick={() => {
-                                setsortBy(sort.sort);
-                                setIsOpen(false);
+                                setSortBy(sort.sort);
+                                setPage(1);
+                                setIsSortOpen(false);
                             }}
                         >
                             {sort.title}
                         </div>
                     ))}
             </div>
+            <div className="sort-lan" ref={langRef}>
+                <div className="sort-lan__container" onClick={() => setIsLangOpen(prev => !prev)}>
+                    <p>{languages.find(l => l.lang === language)?.title}</p>
+                    {!isLangOpen ? <ArrowDown /> : <ArrowUp />}
+                </div>
+                {isLangOpen &&
+                    languages.map(lang => (
+                        <div
+                            key={lang.id}
+                            onClick={() => {
+                                setLanguage(lang.lang);
+                                setPage(1);
+                                setIsLangOpen(false);
+                            }}
+                        >
+                            {lang.title}
+                        </div>
+                    ))}
+            </div>
             <div>
+                <div>
+                    <label htmlFor="checkbox">Only available sessions</label>
+                    <input
+                        type="checkbox"
+                        id="checkbox"
+                        checked={available}
+                        onChange={() => setAvailable(prev => !prev)}
+                    />
+                </div>
                 <div>
                     {error && <div>{error}</div>}
                     {loader && <div>Loading...</div>}
@@ -121,6 +197,11 @@ const HomePage = () => {
                         sessions.map(session => <SessionCard key={session.id} session={session} />)}
                 </div>
             </div>
+            {hasMore && (
+                <button onClick={() => setPage(prev => prev + 1)} disabled={btnLoader}>
+                    {btnLoader ? 'Loading...' : 'Show more sessions...'}
+                </button>
+            )}
         </div>
     );
 };

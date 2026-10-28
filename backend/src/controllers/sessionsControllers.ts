@@ -157,6 +157,10 @@ export const getSessions = async (
             availableSql += 'HAVING COUNT(sm.id) < s.max_players';
         }
 
+        const sqlCount = `SELECT COUNT(*) AS total_count ${baseQuery} ${availableSql}`;
+        const countResult = await query(sqlCount, [values]);
+        const totalCount = parseInt(countResult.rows[0].total_count, 10);
+
         let orderQuery = '';
         switch (reqQuery.sort) {
             case 'newest':
@@ -203,8 +207,11 @@ export const getSessions = async (
 
         const sessions = await query(sql, mainValues);
 
+        const hasMore = totalCount > reqQuery.page * reqQuery.limit;
+
         res.status(200).json({
             sessions: sessions.rows,
+            hasMore,
         });
     } catch (error) {
         if (errorZod(res, error)) {

@@ -21,4 +21,5 @@ export interface Session {
 
 export interface GetSessionsResponse {
     sessions: Session[];
+    hasMore: boolean;
 }
