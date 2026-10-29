@@ -157,8 +157,16 @@ export const getSessions = async (
             availableSql += 'HAVING COUNT(sm.id) < s.max_players';
         }
 
-        const sqlCount = `SELECT COUNT(*) AS total_count ${baseQuery} ${availableSql}`;
-        const countResult = await query(sqlCount, [values]);
+        const sqlCount = `
+            SELECT COUNT(*) AS total_count 
+            FROM (
+                SELECT s.id
+                ${baseQuery}
+                GROUP BY s.id, s.max_players
+                ${availableSql}
+            ) AS count_table;
+        `;
+        const countResult = await query(sqlCount, [...values]);
         const totalCount = parseInt(countResult.rows[0].total_count, 10);
 
         let orderQuery = '';
@@ -801,18 +809,29 @@ export const getSessionsInvitations = async (
         }
 
         const sql = `
-            SELECT u.name AS sender_name, g.name AS game_name, s.title, s.starts_at, s.max_players, COUNT(sm.id) AS current_players, si.id, si.created_at
+            SELECT 
+                u.name AS sender_name, 
+                g.name AS game_name, 
+                s.title, 
+                s.starts_at, 
+                s.max_players, 
+                COALESCE(counted_sessions.current_players, 0)::int AS current_players, 
+                si.id, 
+                si.created_at
             FROM session_invitations si
-            INNER JOIN users u
+            INNER JOIN users u 
                 ON si.sender_id = u.id
-            INNER JOIN sessions s
+            INNER JOIN sessions s 
                 ON si.session_id = s.id
-            INNER JOIN games g
+            INNER JOIN games g 
                 ON s.game_id = g.id
-            LEFT JOIN session_members sm
-                ON s.id = sm.session_id
+            LEFT JOIN (
+                SELECT session_id, COUNT(id) AS current_players 
+                FROM session_members 
+                GROUP BY session_id
+            ) counted_sessions 
+                ON s.id = counted_sessions.session_id
             WHERE si.receiver_id = $1 AND si.status = 'pending' AND s.status = 'waiting'
-            GROUP BY si.id, u.name, g.name, s.title, s.max_players, s.starts_at
         `;
 
         const userInvitations = await query(sql, [userId]);

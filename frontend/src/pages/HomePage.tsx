@@ -28,6 +28,7 @@ const HomePage = () => {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [btnLoader, setBtnLoader] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
 
     const [sortBy, setSortBy] = useState<SessionSort>('newest');
     const [isSortOpen, setIsSortOpen] = useState(false);
@@ -39,10 +40,6 @@ const HomePage = () => {
     const langRef = useRef<HTMLDivElement>(null);
 
     const debounceSearchTerm = useDebounce(search, 500);
-    const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setPage(1);
-        setSearch(e.target.value);
-    };
 
     const sortRef = useRef<HTMLDivElement>(null);
 
@@ -77,10 +74,15 @@ const HomePage = () => {
         const controller = new AbortController();
 
         const getAllSessions = async () => {
+            if (search !== debounceSearchTerm) {
+                return;
+            }
+
             setError('');
 
             if (page === 1) {
                 setLoader(true);
+                setSessions([]);
             } else {
                 setBtnLoader(true);
             }
@@ -112,7 +114,7 @@ const HomePage = () => {
                     });
                 }
             } catch (error) {
-                if (axios.isCancel(error)) {
+                if (controller.signal.aborted || axios.isCancel(error)) {
                     return;
                 }
 
@@ -135,11 +137,18 @@ const HomePage = () => {
         getAllSessions();
 
         return () => controller.abort();
-    }, [debounceSearchTerm, sortBy, available, language, page]);
+    }, [debounceSearchTerm, sortBy, available, language, page, search, retryCount]);
 
     return (
         <div>
-            <input type="text" value={search} onChange={handleSearch} />
+            <input
+                type="text"
+                value={search}
+                onChange={e => {
+                    setPage(1);
+                    setSearch(e.target.value);
+                }}
+            />
             <div className="sort" ref={sortRef}>
                 <div className="sort-container" onClick={() => setIsSortOpen(prev => !prev)}>
                     <p>{sorts.find(s => s.sort === sortBy)?.title}</p>
@@ -185,20 +194,34 @@ const HomePage = () => {
                         type="checkbox"
                         id="checkbox"
                         checked={available}
-                        onChange={() => setAvailable(prev => !prev)}
+                        onChange={() => {
+                            setPage(1);
+                            setAvailable(prev => !prev);
+                        }}
                     />
                 </div>
                 <div>
                     {error && <div>{error}</div>}
-                    {loader && <div>Loading...</div>}
-                    {!error && !loader && sessions.length === 0 && <div>Sessions not found</div>}
-                    {!error &&
-                        !loader &&
-                        sessions.map(session => <SessionCard key={session.id} session={session} />)}
+                    {loader && sessions.length === 0 && <div>Loading...</div>}
+                    {sessions.length === 0 && !loader && !error && <div>Sessions not found</div>}
+                    {sessions.map(session => (
+                        <SessionCard key={session.id} session={session} />
+                    ))}
                 </div>
             </div>
-            {hasMore && (
-                <button onClick={() => setPage(prev => prev + 1)} disabled={btnLoader}>
+            {error && (
+                <button
+                    onClick={() => {
+                        setRetryCount(prev => prev + 1);
+                    }}
+                    disabled={loader || btnLoader}
+                >
+                    Try again
+                </button>
+            )}
+
+            {hasMore && !error && (
+                <button onClick={() => setPage(prev => prev + 1)} disabled={btnLoader || loader}>
                     {btnLoader ? 'Loading...' : 'Show more sessions...'}
                 </button>
             )}
