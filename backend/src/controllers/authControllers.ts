@@ -99,7 +99,10 @@ export const getMyInfo = async (req: Request, res: Response, next: NextFunction)
             return;
         }
 
-        const user = await query('SELECT id, name, email FROM users WHERE id = $1', [userId]);
+        const user = await query(
+            'SELECT id, name, email, rating_sum, avatar_url, created_at FROM users WHERE id = $1',
+            [userId],
+        );
 
         if (user.rowCount === 0) {
             res.status(404).json({ message: 'User not found' });

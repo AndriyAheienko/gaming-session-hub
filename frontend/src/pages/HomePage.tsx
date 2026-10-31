@@ -7,6 +7,7 @@ import axios from 'axios';
 import type { SessionSort } from '../features/sessions/types/session';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useOutsideClick } from '../hooks/useOutsideClick';
+import { useNavigate } from 'react-router-dom';
 
 interface Sort {
     id: number;
@@ -71,13 +72,13 @@ const HomePage = () => {
     ];
 
     useEffect(() => {
+        if (search !== debounceSearchTerm) {
+            return;
+        }
+
         const controller = new AbortController();
 
         const getAllSessions = async () => {
-            if (search !== debounceSearchTerm) {
-                return;
-            }
-
             setError('');
 
             if (page === 1) {
@@ -113,14 +114,14 @@ const HomePage = () => {
                         return [...prev, ...newSessions];
                     });
                 }
-            } catch (error) {
+            } catch (err) {
                 if (controller.signal.aborted || axios.isCancel(error)) {
                     return;
                 }
 
-                if (axios.isAxiosError(error)) {
+                if (axios.isAxiosError(err)) {
                     const message =
-                        error.response?.data?.message || 'Error retrieving the list of sessions';
+                        err.response?.data?.message || 'Error retrieving the list of sessions';
                     setError(message);
                 } else {
                     setError('An unexpected error occurred');
@@ -139,13 +140,18 @@ const HomePage = () => {
         return () => controller.abort();
     }, [debounceSearchTerm, sortBy, available, language, page, search, retryCount]);
 
+    const navigate = useNavigate();
+
     return (
         <div>
+            <button onClick={() => navigate('')}>Create Session</button>
             <input
                 type="text"
                 value={search}
                 onChange={e => {
                     setPage(1);
+                    setLoader(false);
+                    setBtnLoader(false);
                     setSearch(e.target.value);
                 }}
             />
