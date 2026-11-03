@@ -100,7 +100,7 @@ export const getMyInfo = async (req: Request, res: Response, next: NextFunction)
         }
 
         const user = await query(
-            'SELECT id, name, email, rating_sum, avatar_url, created_at FROM users WHERE id = $1',
+            'SELECT id, name, email, rating_sum, rating_count, avatar_url, created_at FROM users WHERE id = $1',
             [userId],
         );
 

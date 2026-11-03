@@ -1,18 +1,26 @@
 import { useState } from 'react';
-import { register, login, getUserInfo } from '../services/authApi';
-import type { User } from '../types/auth';
-import type { ToastState } from '../../../types/common';
 import axios from 'axios';
 
+import { register, login, getUserInfo } from '../services/authApi';
+import type { ToastState } from '../../../types/common';
+import Toast from '../../../components/ui/Toast';
+import { useAuth } from '../context/AuthContext';
+
+import './ModalAuth.scss';
+
 const ModalAuth = () => {
-    const [user, setUser] = useState<User | null>(null);
-    const [isModal, setIsModal] = useState(false);
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLogin, setIsLogin] = useState(true);
     const [loader, setLoader] = useState(false);
-    const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'success' });
+    const [toast, setToast] = useState<ToastState>({
+        show: false,
+        message: '',
+        type: 'success',
+    });
+
+    const { setUser, isAuthModalOpen, closeAuthModal } = useAuth();
 
     const handleSubmit = async (e: React.SubmitEvent) => {
         e.preventDefault();
@@ -30,10 +38,11 @@ const ModalAuth = () => {
                 }
 
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
                 if (!emailRegex.test(email)) {
                     setToast({
                         show: true,
-                        message: 'Please enter a valid email (for example: user@mail.com))',
+                        message: 'Please enter a valid email (for example: user@mail.com)',
                         type: 'error',
                     });
                     return;
@@ -49,11 +58,21 @@ const ModalAuth = () => {
                 }
 
                 setLoader(true);
+
                 const result = await login(email, password);
                 localStorage.setItem('token', result.token);
-                const userInfo = await getUserInfo();
+
+                let userInfo;
+
+                try {
+                    userInfo = await getUserInfo();
+                } catch (err) {
+                    localStorage.removeItem('token');
+                    throw err;
+                }
+
                 setUser(userInfo);
-                setIsModal(false);
+                closeAuthModal();
             } else {
                 if (!email.trim() || !password.trim() || !name.trim()) {
                     setToast({
@@ -65,10 +84,11 @@ const ModalAuth = () => {
                 }
 
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
                 if (!emailRegex.test(email)) {
                     setToast({
                         show: true,
-                        message: 'Please enter a valid email (for example: user@mail.com))',
+                        message: 'Please enter a valid email (for example: user@mail.com)',
                         type: 'error',
                     });
                     return;
@@ -84,24 +104,29 @@ const ModalAuth = () => {
                 }
 
                 setLoader(true);
+
                 const result = await register(name, email, password);
+
                 setToast({
                     show: true,
                     message: `${result.message}, Now sign in to your account.`,
                     type: 'success',
                 });
+
                 setIsLogin(true);
                 setPassword('');
                 setName('');
             }
         } catch (err) {
             let errorMessage = 'An unexpected error occurred';
+
             if (axios.isAxiosError(err)) {
                 errorMessage =
                     err.response?.data.message || 'Error during login or account registration';
             } else {
                 console.error('Unknown error:', err);
             }
+
             setToast({
                 show: true,
                 message: errorMessage,
@@ -113,40 +138,104 @@ const ModalAuth = () => {
     };
 
     return (
-        <div className="backdrop">
-            <div className="auth-modal">
-                <h2>{isLogin ? 'Login' : 'Register'}</h2>
-                <form onSubmit={handleSubmit}>
+        <div
+            className={`auth-modal-overlay ${isAuthModalOpen ? 'show' : ''}`}
+            aria-hidden={!isAuthModalOpen}
+            inert={!isAuthModalOpen}
+        >
+            <section
+                className="auth-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="auth-modal-title"
+            >
+                <button
+                    className="auth-modal__close"
+                    type="button"
+                    onClick={closeAuthModal}
+                    aria-label="Close authentication window"
+                >
+                    <span aria-hidden="true">×</span>
+                </button>
+
+                <div className="auth-modal__header">
+                    <span className="auth-modal__eyebrow">GAMING SESSION HUB</span>
+
+                    <h2 className="auth-modal__title" id="auth-modal-title">
+                        {isLogin ? 'Welcome back' : 'Create your account'}
+                    </h2>
+
+                    <p className="auth-modal__description">
+                        {isLogin
+                            ? 'Sign in to continue your gaming journey.'
+                            : 'Join the community and find your next gaming session.'}
+                    </p>
+                </div>
+
+                <form className="auth-modal__form" onSubmit={handleSubmit}>
                     {!isLogin && (
-                        <div>
-                            <label>Name</label>
+                        <div className="auth-modal__field">
+                            <label className="auth-modal__label" htmlFor="auth-name">
+                                Name
+                            </label>
+
                             <input
+                                className="auth-modal__input"
+                                id="auth-name"
                                 type="text"
+                                autoComplete="name"
+                                placeholder="Your name"
                                 value={name}
                                 onChange={e => setName(e.target.value)}
                             />
                         </div>
                     )}
-                    <div>
-                        <label>Email</label>
+
+                    <div className="auth-modal__field">
+                        <label className="auth-modal__label" htmlFor="auth-email">
+                            Email
+                        </label>
+
                         <input
+                            className="auth-modal__input"
+                            id="auth-email"
                             type="email"
+                            autoComplete="email"
+                            placeholder="user@mail.com"
                             value={email}
                             onChange={e => setEmail(e.target.value)}
                         />
                     </div>
-                    <div>
-                        <label>Password</label>
+
+                    <div className="auth-modal__field">
+                        <label className="auth-modal__label" htmlFor="auth-password">
+                            Password
+                        </label>
+
                         <input
+                            className="auth-modal__input"
+                            id="auth-password"
                             type="password"
+                            autoComplete={isLogin ? 'current-password' : 'new-password'}
+                            placeholder="At least 6 characters"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                         />
                     </div>
-                    <button disabled={loader} type="submit">
+
+                    <button className="auth-modal__submit" disabled={loader} type="submit">
                         {loader ? 'Loading...' : isLogin ? 'Sign in' : 'Sign up'}
                     </button>
+                </form>
+
+                <div className="auth-modal__footer">
+                    <span className="auth-modal__footer-text">
+                        {isLogin ? "Don't have an account?" : 'Already have an account?'}
+                    </span>
+
                     <button
+                        className="auth-modal__switch"
+                        type="button"
                         disabled={loader}
                         onClick={() => {
                             setToast(prev => ({ ...prev, show: false }));
@@ -156,12 +245,17 @@ const ModalAuth = () => {
                             setIsLogin(prev => !prev);
                         }}
                     >
-                        {isLogin
-                            ? `Don't have an account? Register`
-                            : 'Already have an account? Log in'}
+                        {isLogin ? 'Register' : 'Log in'}
                     </button>
-                </form>
-            </div>
+                </div>
+            </section>
+
+            <Toast
+                show={toast.show}
+                message={toast.message}
+                type={toast.type}
+                onClose={() => setToast(prev => ({ ...prev, show: false }))}
+            />
         </div>
     );
 };

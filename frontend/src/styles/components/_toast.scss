@@ -1,5 +1,5 @@
-@use '../../utils/variables' as *;
-@use '../../utils/mixins' as *;
+@use '../utils/variables' as *;
+@use '../utils/mixins' as *;
 
 .toast {
     position: fixed;

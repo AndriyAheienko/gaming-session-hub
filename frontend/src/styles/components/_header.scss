@@ -1,15 +1,57 @@
-@use '../utils/mixins' as *;
 @use '../utils/variables' as *;
 
-.header {
-    height: 64px;
-    border-bottom: 1px solid $border-light;
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    padding: 0 16px;
+.app-header {
+    width: 100%;
+    min-height: 72px;
 
-    @include tablet {
-        padding: 0 32px;
+    background: $bg-surface;
+    border-bottom: 1px solid $border-light;
+
+    &__content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+
+        width: 100%;
+        min-height: 72px;
+        padding: 0 20px;
+    }
+
+    &__placeholder {
+        color: $text-main;
+        font-family: $font-accent;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    &__auth-button {
+        min-height: 40px;
+        padding: 0 22px;
+
+        color: $bg-app;
+        font-family: $font-accent;
+        font-size: 16px;
+        font-weight: 700;
+        text-transform: uppercase;
+
+        background: $accent-main;
+        border: none;
+        border-radius: 7px;
+
+        cursor: pointer;
+        transition:
+            background 0.2s ease,
+            transform 0.2s ease;
+
+        &:hover {
+            background: $accent-hover;
+            transform: translateY(-1px);
+        }
+
+        &:focus-visible {
+            outline: 2px solid $text-main;
+            outline-offset: 3px;
+        }
     }
 }

@@ -5,8 +5,12 @@ import './styles/fonts.ts';
 import './styles/main.scss';
 import App from './app/App.tsx';
 
+import { AuthProvider } from './app/providers/AuthProvider.tsx';
+
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
-        <App />
+        <AuthProvider>
+            <App />
+        </AuthProvider>
     </StrictMode>,
 );

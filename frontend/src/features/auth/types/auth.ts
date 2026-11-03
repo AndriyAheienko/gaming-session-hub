@@ -18,6 +18,11 @@ export interface User {
     name: string;
     email: string;
     rating_sum: number;
+    rating_count: number;
     avatar_url: string | null;
     created_at: string;
+}
+
+export interface GetUserInfoResponse {
+    user: User;
 }

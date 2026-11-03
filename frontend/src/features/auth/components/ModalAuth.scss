@@ -1,0 +1,220 @@
+@use '../../../styles/utils/variables' as *;
+
+.auth-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 0.25s ease,
+        visibility 0.25s ease;
+
+    &.show {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+}
+
+.auth-modal {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    padding: 36px 28px;
+    background: $bg-surface;
+    border: 1px solid $border-light;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    transform: translateY(16px) scale(0.98);
+    transition: transform 0.25s ease;
+
+    .show & {
+        transform: translateY(0) scale(1);
+    }
+
+    &__close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        color: $text-secondary;
+        font-size: 26px;
+        line-height: 1;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+            color 0.2s ease,
+            background 0.2s ease,
+            border-color 0.2s ease;
+
+        &:hover {
+            color: $text-main;
+            background: $hover-light;
+            border-color: $border-light;
+        }
+    }
+
+    &__header {
+        margin-bottom: 28px;
+    }
+
+    &__eyebrow {
+        display: block;
+        margin-bottom: 10px;
+        color: $accent-main;
+        font-family: $font-accent;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+
+    &__title {
+        margin: 0 0 10px;
+        color: $text-main;
+        font-family: $font-accent;
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1.15;
+    }
+
+    &__description {
+        margin: 0;
+        color: $text-secondary;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    &__form {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__label {
+        color: $text-main;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    &__input {
+        width: 100%;
+        min-height: 46px;
+        padding: 0 14px;
+        color: $text-main;
+        font-family: $font-main;
+        font-size: 14px;
+        background: $bg-elevated;
+        border: 1px solid $border-light;
+        border-radius: 8px;
+        outline: none;
+        transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease;
+
+        &::placeholder {
+            color: $text-secondary;
+            opacity: 0.7;
+        }
+
+        &:focus {
+            border-color: $accent-main;
+            box-shadow: 0 0 0 3px $accent-transparent;
+        }
+    }
+
+    &__submit {
+        min-height: 48px;
+        margin-top: 6px;
+        padding: 0 20px;
+        color: $bg-app;
+        font-family: $font-accent;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        background: $accent-main;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+            background 0.2s ease,
+            transform 0.2s ease,
+            opacity 0.2s ease;
+
+        &:hover:not(:disabled) {
+            background: $accent-hover;
+            transform: translateY(-1px);
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+    }
+
+    &__footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid $border-light;
+    }
+
+    &__footer-text {
+        color: $text-secondary;
+        font-size: 13px;
+    }
+
+    &__switch {
+        padding: 4px;
+        color: $accent-main;
+        font-family: $font-main;
+        font-size: 13px;
+        font-weight: 600;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: color 0.2s ease;
+
+        &:hover:not(:disabled) {
+            color: $accent-hover;
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+    }
+}
+
+@media (max-width: 480px) {
+    .auth-modal {
+        padding: 32px 20px;
+
+        &__title {
+            font-size: 28px;
+        }
+    }
+}
