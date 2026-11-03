@@ -160,12 +160,11 @@ const HomePage = () => {
                 <button
                     className="home-page__create-button"
                     type="button"
-                    onClick={() => navigate('')}
+                    onClick={() => navigate('/session-create')}
                 >
                     Create session
                 </button>
             </header>
-
             <section className="session-filters" aria-label="Session search and filters">
                 <form
                     className="session-filters__search"
@@ -175,7 +174,6 @@ const HomePage = () => {
                     <label className="session-filters__label" htmlFor="session-search">
                         Search sessions
                     </label>
-
                     <input
                         className="session-filters__search-input"
                         id="session-search"
@@ -190,13 +188,10 @@ const HomePage = () => {
                         }}
                     />
                 </form>
-
                 <fieldset className="session-filters__options">
                     <legend className="session-filters__legend">Filters</legend>
-
                     <div className="session-filters__dropdown" ref={sortRef}>
                         <span className="session-filters__label">Sort by</span>
-
                         <button
                             className="session-filters__dropdown-trigger"
                             type="button"
@@ -207,7 +202,6 @@ const HomePage = () => {
                             <span>{sorts.find(s => s.sort === sortBy)?.title}</span>
                             {isSortOpen ? <ArrowUp /> : <ArrowDown />}
                         </button>
-
                         {isSortOpen && (
                             <ul className="session-filters__dropdown-menu">
                                 {sorts.map(sort => (
@@ -232,10 +226,8 @@ const HomePage = () => {
                             </ul>
                         )}
                     </div>
-
                     <div className="session-filters__dropdown" ref={langRef}>
                         <span className="session-filters__label">Language</span>
-
                         <button
                             className="session-filters__dropdown-trigger"
                             type="button"
@@ -246,7 +238,6 @@ const HomePage = () => {
                             <span>{languages.find(l => l.lang === language)?.title}</span>
                             {isLangOpen ? <ArrowUp /> : <ArrowDown />}
                         </button>
-
                         {isLangOpen && (
                             <ul className="session-filters__dropdown-menu">
                                 {languages.map(lang => (
@@ -271,7 +262,6 @@ const HomePage = () => {
                             </ul>
                         )}
                     </div>
-
                     <label className="session-filters__checkbox">
                         <input
                             className="session-filters__checkbox-input"
@@ -282,7 +272,6 @@ const HomePage = () => {
                                 setAvailable(prev => !prev);
                             }}
                         />
-
                         <span className="session-filters__checkbox-control" aria-hidden="true" />
                         <span className="session-filters__checkbox-text">
                             Only available sessions
@@ -290,13 +279,11 @@ const HomePage = () => {
                     </label>
                 </fieldset>
             </section>
-
             <section className="session-results" aria-label="Available gaming sessions">
                 <div className="session-results__header">
                     <h2 className="session-results__title">Sessions</h2>
                     <span className="session-results__count">{sessions.length} found</span>
                 </div>
-
                 {error && (
                     <p
                         className="session-results__message session-results__message--error"
@@ -305,19 +292,16 @@ const HomePage = () => {
                         {error}
                     </p>
                 )}
-
                 {loader && sessions.length === 0 && (
                     <p className="session-results__message" role="status">
                         Loading sessions...
                     </p>
                 )}
-
                 {sessions.length === 0 && !loader && !error && (
                     <p className="session-results__message">
                         No sessions found. Try changing your search or filters.
                     </p>
                 )}
-
                 {sessions.length > 0 && (
                     <ul className="session-results__list">
                         {sessions.map(session => (
@@ -327,7 +311,6 @@ const HomePage = () => {
                         ))}
                     </ul>
                 )}
-
                 {error && (
                     <button
                         className="session-results__retry-button"
@@ -338,7 +321,6 @@ const HomePage = () => {
                         Try again
                     </button>
                 )}
-
                 {hasMore && !error && (
                     <button
                         className="session-results__more-button"

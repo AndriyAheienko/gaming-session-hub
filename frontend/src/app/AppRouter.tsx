@@ -7,6 +7,7 @@ import Loader from '../components/ui/Loader';
 const HomePage = lazy(() => import('../pages/HomePage'));
 const ProfilePage = lazy(() => import('../pages/ProfilePage'));
 const SessionPage = lazy(() => import('../pages/SessionPage'));
+const CreateSession = lazy(() => import('../features/sessions/components/CreateSessionPage'));
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage'));
 
 const AppRouter = () => {
@@ -19,6 +20,7 @@ const AppRouter = () => {
                         <Route path="/sessions/:sessionId" element={<SessionPage />} />
                         <Route path="/profile" element={<ProfilePage />} />
                         <Route path="/profile/:userId" element={<ProfilePage />} />
+                        <Route path="/session-create" element={<CreateSession />} />
                         <Route path="*" element={<NotFoundPage />} />
                     </Route>
                 </Routes>

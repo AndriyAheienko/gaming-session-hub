@@ -157,21 +157,17 @@ const ModalAuth = () => {
                 >
                     <span aria-hidden="true">×</span>
                 </button>
-
                 <div className="auth-modal__header">
                     <span className="auth-modal__eyebrow">GAMING SESSION HUB</span>
-
                     <h2 className="auth-modal__title" id="auth-modal-title">
                         {isLogin ? 'Welcome back' : 'Create your account'}
                     </h2>
-
                     <p className="auth-modal__description">
                         {isLogin
                             ? 'Sign in to continue your gaming journey.'
                             : 'Join the community and find your next gaming session.'}
                     </p>
                 </div>
-
                 <form className="auth-modal__form" onSubmit={handleSubmit}>
                     {!isLogin && (
                         <div className="auth-modal__field">
@@ -190,7 +186,6 @@ const ModalAuth = () => {
                             />
                         </div>
                     )}
-
                     <div className="auth-modal__field">
                         <label className="auth-modal__label" htmlFor="auth-email">
                             Email
@@ -206,12 +201,10 @@ const ModalAuth = () => {
                             onChange={e => setEmail(e.target.value)}
                         />
                     </div>
-
                     <div className="auth-modal__field">
                         <label className="auth-modal__label" htmlFor="auth-password">
                             Password
                         </label>
-
                         <input
                             className="auth-modal__input"
                             id="auth-password"
@@ -222,17 +215,14 @@ const ModalAuth = () => {
                             onChange={e => setPassword(e.target.value)}
                         />
                     </div>
-
                     <button className="auth-modal__submit" disabled={loader} type="submit">
                         {loader ? 'Loading...' : isLogin ? 'Sign in' : 'Sign up'}
                     </button>
                 </form>
-
                 <div className="auth-modal__footer">
                     <span className="auth-modal__footer-text">
                         {isLogin ? "Don't have an account?" : 'Already have an account?'}
                     </span>
-
                     <button
                         className="auth-modal__switch"
                         type="button"
@@ -249,7 +239,6 @@ const ModalAuth = () => {
                     </button>
                 </div>
             </section>
-
             <Toast
                 show={toast.show}
                 message={toast.message}
