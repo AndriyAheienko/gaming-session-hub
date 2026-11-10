@@ -23,6 +23,21 @@ interface Language {
     lang: SessionLanguage | undefined;
 }
 
+const sorts: Sort[] = [
+    { id: 1, title: 'Newest', sort: 'newest' },
+    { id: 2, title: 'Oldest', sort: 'oldest' },
+    { id: 3, title: 'Soonest', sort: 'soonest' },
+    { id: 4, title: 'Latest', sort: 'latest' },
+    { id: 5, title: 'Least free', sort: 'least-free' },
+    { id: 6, title: 'Most free', sort: 'most-free' },
+];
+
+const languages: Language[] = [
+    { id: 1, title: 'All languages', lang: undefined },
+    { id: 2, title: 'English', lang: 'eng' },
+    { id: 3, title: 'Ukrainian', lang: 'ua' },
+];
+
 const HomePage = () => {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [search, setSearch] = useState('');
@@ -57,21 +72,6 @@ const HomePage = () => {
     }, []);
 
     useOutsideClick(langRef, closeLang);
-
-    const sorts: Sort[] = [
-        { id: 1, title: 'Newest', sort: 'newest' },
-        { id: 2, title: 'Oldest', sort: 'oldest' },
-        { id: 3, title: 'Soonest', sort: 'soonest' },
-        { id: 4, title: 'Latest', sort: 'latest' },
-        { id: 5, title: 'Least free', sort: 'least-free' },
-        { id: 6, title: 'Most free', sort: 'most-free' },
-    ];
-
-    const languages: Language[] = [
-        { id: 1, title: 'All languages', lang: undefined },
-        { id: 2, title: 'English', lang: 'eng' },
-        { id: 3, title: 'Ukrainian', lang: 'ua' },
-    ];
 
     useEffect(() => {
         if (search !== debounceSearchTerm) {
@@ -160,7 +160,7 @@ const HomePage = () => {
                 <button
                     className="home-page__create-button"
                     type="button"
-                    onClick={() => navigate('/session-create')}
+                    onClick={() => navigate('/sessionCreate')}
                 >
                     Create session
                 </button>

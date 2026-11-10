@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { ToastType } from '../../types/common';
+import type { ToastType } from '../../types/common.types';
 import { X } from 'lucide-react';
 
 interface ToastProps {

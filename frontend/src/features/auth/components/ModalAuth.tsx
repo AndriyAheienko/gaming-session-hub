@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 
 import { register, login, getUserInfo } from '../services/authApi';
-import type { ToastState } from '../../../types/common';
+import type { ToastState } from '../../../types/common.types';
 import Toast from '../../../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 

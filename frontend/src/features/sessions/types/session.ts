@@ -37,9 +37,9 @@ export interface CreateSessionPayload {
     title: string;
     maxPlayers: number;
     startsAt: string;
-    language: SessionLanguage;
+    language?: SessionLanguage;
     micRequired: boolean;
-    description: string;
+    description?: string;
     rawg_id: number;
 }
 

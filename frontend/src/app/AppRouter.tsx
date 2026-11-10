@@ -20,7 +20,7 @@ const AppRouter = () => {
                         <Route path="/sessions/:sessionId" element={<SessionPage />} />
                         <Route path="/profile" element={<ProfilePage />} />
                         <Route path="/profile/:userId" element={<ProfilePage />} />
-                        <Route path="/session-create" element={<CreateSession />} />
+                        <Route path="/sessionCreate" element={<CreateSession />} />
                         <Route path="*" element={<NotFoundPage />} />
                     </Route>
                 </Routes>

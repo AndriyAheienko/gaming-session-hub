@@ -22,8 +22,6 @@ export const getSessions = async (
 export const createSession = async (
     payload: CreateSessionPayload,
 ): Promise<CreateSessionResponse> => {
-    const { data } = await api.post<CreateSessionResponse>('/sessions', {
-        payload,
-    });
+    const { data } = await api.post<CreateSessionResponse>('/sessions', payload);
     return data;
 };

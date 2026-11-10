@@ -1,0 +1,583 @@
+@use '../../../styles/utils/variables' as *;
+@use '../../../styles/utils/mixins' as *;
+
+.create-session-page {
+    min-height: 100%;
+    padding: 36px 0 64px;
+    color: $text-main;
+
+    &__container {
+        @include container;
+        max-width: 960px;
+    }
+
+    &__header {
+        margin-bottom: 32px;
+    }
+
+    &__eyebrow {
+        display: inline-block;
+        margin-bottom: 10px;
+        color: $accent-main;
+        font-family: $font-accent;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+
+    &__title {
+        margin: 0;
+        font-family: $font-accent;
+        font-size: 36px;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+
+    &__description {
+        margin: 12px 0 0;
+        color: $text-secondary;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    @include tablet {
+        padding-top: 48px;
+
+        &__title {
+            font-size: 44px;
+        }
+    }
+}
+
+.create-session-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+    background: $bg-surface;
+    border: 1px solid $border-light;
+    border-radius: 12px;
+
+    &__section {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    &__section-heading {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding-bottom: 18px;
+        border-bottom: 1px solid $border-light;
+    }
+
+    &__section-icon {
+        display: grid;
+        flex: 0 0 42px;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        color: $accent-main;
+        background: $accent-transparent;
+        border-radius: 10px;
+    }
+
+    &__section-title {
+        margin: 0;
+        font-family: $font-accent;
+        font-size: 22px;
+        font-weight: 700;
+    }
+
+    &__section-description {
+        margin: 4px 0 0;
+        color: $text-secondary;
+        font-size: 13px;
+    }
+
+    &__fields {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 22px;
+    }
+
+    &__field {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 9px;
+
+        &--full {
+            grid-column: 1 / -1;
+        }
+    }
+
+    &__label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: $text-main;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    &__input,
+    &__textarea {
+        width: 100%;
+        min-width: 0;
+        padding: 12px 14px;
+        color: $text-main;
+        font: inherit;
+        font-size: 14px;
+        background: $bg-elevated;
+        border: 1px solid $border-light;
+        border-radius: 7px;
+        outline: none;
+        transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease;
+
+        &::placeholder {
+            color: $text-secondary;
+            opacity: 0.7;
+        }
+
+        &:focus {
+            border-color: $accent-main;
+            box-shadow: 0 0 0 3px $accent-transparent;
+        }
+    }
+
+    &__input {
+        min-height: 44px;
+
+        &[type='datetime-local'] {
+            color-scheme: dark;
+        }
+    }
+
+    &__textarea {
+        min-height: 120px;
+        resize: vertical;
+        line-height: 1.5;
+    }
+
+    &__hint {
+        color: $text-secondary;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    &__optional {
+        color: $text-secondary;
+        font-size: 12px;
+        font-weight: 400;
+    }
+
+    &__mic-option {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        grid-column: 1 / -1;
+        padding: 14px;
+        background: $bg-elevated;
+        border: 1px solid $border-light;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    &__mic-checkbox {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+
+        &:checked + .create-session-form__mic-control {
+            color: $bg-app;
+            background: $accent-main;
+            border-color: $accent-main;
+        }
+
+        &:focus-visible + .create-session-form__mic-control {
+            outline: 2px solid $accent-main;
+            outline-offset: 3px;
+        }
+    }
+
+    &__mic-control {
+        display: grid;
+        flex: 0 0 38px;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        color: $text-secondary;
+        background: $bg-surface;
+        border: 1px solid $border-light;
+        border-radius: 8px;
+        transition: 0.2s ease;
+    }
+
+    &__mic-text {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    &__mic-title {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    &__mic-description {
+        color: $text-secondary;
+        font-size: 12px;
+    }
+
+    &__message {
+        margin: 0;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        border-radius: 7px;
+
+        &--error {
+            color: $delete-color;
+            background: rgba(176, 69, 69, 0.1);
+            border: 1px solid rgba(176, 69, 69, 0.25);
+        }
+
+        &--success {
+            color: $confirmed-color;
+            background: rgba(95, 194, 95, 0.1);
+            border: 1px solid rgba(95, 194, 95, 0.25);
+        }
+    }
+
+    &__footer {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 10px;
+        padding-top: 20px;
+        border-top: 1px solid $border-light;
+    }
+
+    &__cancel,
+    &__submit {
+        min-height: 46px;
+        padding: 0 22px;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        border-radius: 7px;
+        cursor: pointer;
+        transition:
+            background 0.2s ease,
+            color 0.2s ease,
+            border-color 0.2s ease,
+            opacity 0.2s ease;
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+    }
+
+    &__cancel {
+        color: $text-secondary;
+        background: transparent;
+        border: 1px solid $border-light;
+
+        &:hover:not(:disabled) {
+            color: $text-main;
+            background: $hover-light;
+        }
+    }
+
+    &__submit {
+        color: $bg-app;
+        background: $accent-main;
+        border: 1px solid $accent-main;
+
+        &:hover:not(:disabled) {
+            background: $accent-hover;
+            border-color: $accent-hover;
+        }
+    }
+
+    @include tablet {
+        gap: 30px;
+        padding: 30px;
+
+        &__fields {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 20px;
+            row-gap: 24px;
+        }
+
+        &__footer {
+            flex-direction: row;
+            justify-content: flex-end;
+        }
+
+        &__cancel,
+        &__submit {
+            min-width: 150px;
+        }
+    }
+}
+
+.game-search {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+
+    &__label {
+        color: $text-main;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    &__input-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    &__icon {
+        position: absolute;
+        left: 14px;
+        color: $text-secondary;
+        pointer-events: none;
+    }
+
+    &__input {
+        width: 100%;
+        min-height: 46px;
+        padding: 12px 44px;
+        color: $text-main;
+        font: inherit;
+        font-size: 14px;
+        background: $bg-elevated;
+        border: 1px solid $border-light;
+        border-radius: 7px;
+        outline: none;
+        transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease;
+
+        &::placeholder {
+            color: $text-secondary;
+            opacity: 0.7;
+        }
+
+        &:focus {
+            border-color: $accent-main;
+            box-shadow: 0 0 0 3px $accent-transparent;
+        }
+    }
+
+    &__clear {
+        position: absolute;
+        right: 10px;
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        color: $text-secondary;
+        background: transparent;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+
+        &:hover {
+            color: $text-main;
+            background: $hover-light;
+        }
+    }
+
+    &__status,
+    &__hint,
+    &__message {
+        margin: 0;
+        color: $text-secondary;
+        font-size: 12px;
+    }
+
+    &__message {
+        padding: 10px 12px;
+        background: $bg-elevated;
+        border-radius: 6px;
+
+        &--error {
+            color: $delete-color;
+        }
+    }
+
+    &__results {
+        position: absolute;
+        z-index: 5;
+        top: calc(100% + 4px);
+        right: 0;
+        left: 0;
+        max-height: 350px;
+        margin: 0;
+        padding: 6px;
+        overflow-y: auto;
+        list-style: none;
+        background: $bg-elevated;
+        border: 1px solid $border-light;
+        border-radius: 8px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    &__result {
+        &:not(:last-child) {
+            margin-bottom: 3px;
+        }
+    }
+
+    &__result-button {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        align-items: center;
+        gap: 12px;
+        padding: 9px;
+        text-align: left;
+        color: $text-main;
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+
+        &:hover,
+        &:focus-visible {
+            background: $hover-light;
+            outline: none;
+        }
+    }
+
+    &__result-image,
+    &__result-placeholder {
+        flex: 0 0 68px;
+        width: 68px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 5px;
+    }
+
+    &__result-placeholder {
+        display: grid;
+        place-items: center;
+        color: $text-secondary;
+        background: $bg-surface;
+    }
+
+    &__result-info {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    &__result-name {
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__result-meta {
+        color: $text-secondary;
+        font-size: 11px;
+    }
+}
+
+.selected-game {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    background: $accent-transparent;
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: 8px;
+
+    &__image,
+    &__placeholder {
+        flex: 0 0 100px;
+        width: 100px;
+        height: 70px;
+        object-fit: cover;
+        border-radius: 6px;
+    }
+
+    &__placeholder {
+        display: grid;
+        place-items: center;
+        color: $text-secondary;
+        background: $bg-elevated;
+    }
+
+    &__info {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    &__label {
+        color: $accent-main;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+
+    &__name {
+        overflow: hidden;
+        margin: 0;
+        font-family: $font-accent;
+        font-size: 19px;
+        font-weight: 700;
+        text-overflow: ellipsis;
+    }
+
+    &__meta {
+        color: $text-secondary;
+        font-size: 11px;
+    }
+
+    &__remove {
+        display: grid;
+        flex: 0 0 34px;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        color: $text-secondary;
+        background: transparent;
+        border: 1px solid $border-light;
+        border-radius: 6px;
+        cursor: pointer;
+
+        &:hover {
+            color: $text-main;
+            background: $hover-light;
+        }
+    }
+
+    @include tablet {
+        &__image,
+        &__placeholder {
+            flex-basis: 130px;
+            width: 130px;
+            height: 82px;
+        }
+    }
+}
